@@ -1,5 +1,19 @@
 # Implementation Notes: CSTM-184
 
+## Scope Change (2026-06-09)
+
+**User correction:** Eliminate monorepo; flatten to single-package browser runtime library.
+
+| Change | Action taken |
+|--------|--------------|
+| Remove pnpm workspaces | Deleted `pnpm-workspace.yaml`; switched to npm single package |
+| Remove `@sailpoint/plugin-cli` | Deleted `packages/plugin-cli/` |
+| Flatten `@sailpoint/ui-plugin-sdk` | Moved `src/` and `__tests__/` to repo root |
+| Simplify configs | Single `tsconfig.json`, browser-only ESLint globals, simplified scripts |
+| Package identity | Root `package.json` is now `@sailpoint/ui-plugin-sdk` |
+
+**External follow-up:** Update Ticket 1 in `sdk-epic.org` and Jira CSTM-184 description to match revised scope (documented in `context/jira.md`).
+
 ## Key Decisions
 
 **1. ESLint flat config without `eslint-config-standard`**

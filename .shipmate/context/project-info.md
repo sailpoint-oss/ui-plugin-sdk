@@ -2,18 +2,18 @@
 
 | Field | Value |
 |-------|-------|
-| Name | `ui-plugin-sdk` |
+| Name | `@sailpoint/ui-plugin-sdk` |
 | Team | frontend |
-| Repo status | Greenfield — no source code yet |
+| Repo status | Scaffolded — single-package browser runtime library |
+| Package manager | npm |
 | Primary branch | `main` |
-| Remote | `origin/main` |
-| Commit count | 1 |
 | Harness | Cursor |
 | Feature flag mode | strong |
 
 ## Entry Points
 
-> _None defined yet._ No `package.json`, `index.ts`, or library exports exist.
+- `src/index.ts` — library entry (placeholder `VERSION` export)
+- `dist/index.js` — compiled output after `npm run build`
 
 ## Operating Constraints
 

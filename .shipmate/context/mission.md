@@ -2,11 +2,11 @@
 
 ## Purpose
 
-`ui-plugin-sdk` is a UI plugin SDK intended to provide a standardized interface for building and integrating UI plugins. The project is owned by the **frontend** team.
+`@sailpoint/ui-plugin-sdk` is a browser runtime library for ISC UI plugin development — COIP/iframe handshake and plugin integration. The project is owned by the **frontend** team. CLI tooling lives outside this repository.
 
 ## Status
 
-**Greenfield** — the repository has been initialized but contains no source code yet. The first commit established the repo scaffold and Shipmate tooling configuration.
+**Scaffolded** — single-package npm repository with TypeScript, ESLint, Prettier, and Jest configured. Placeholder runtime entry point in place.
 
 ## Goals
 

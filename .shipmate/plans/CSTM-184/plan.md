@@ -1,6 +1,6 @@
 # Feature: SDK Repository Skeleton & Workspace Initialization
 
-**Status:** Implemented
+**Status:** Implemented (revised 2026-06-09 — single-package browser runtime)
 **Created:** 2026-06-09
 **Jira:** [CSTM-184](https://sailpoint.atlassian.net/browse/CSTM-184)
 **Epic:** [CSTM-183](https://sailpoint.atlassian.net/browse/CSTM-183) - UI Plugin SDK
@@ -20,9 +20,9 @@ This plan was created using context from:
 
 ## Problem Statement
 
-The UI Plugin SDK needs a dedicated, independent repository with a well-structured monorepo layout so that developers can immediately begin implementing the runtime library (`@sailpoint/ui-plugin-sdk`) and CLI tooling (`@sailpoint/plugin-cli`). The repo must be completely independent of `saas-ui-monorepo`, use lightweight workspace tooling (pnpm workspaces, no Nx), and establish consistent code quality standards (linting, formatting, testing) from the start.
+The UI Plugin SDK needs a dedicated, independent repository with a lightweight single-package layout so that developers can immediately begin implementing the browser runtime library (`@sailpoint/ui-plugin-sdk`). The repo must be completely independent of `saas-ui-monorepo`, use standard npm (no workspaces), and establish consistent code quality standards (linting, formatting, testing) from the start. CLI tooling is decoupled from this repository.
 
-This is the foundational ticket — every other story in the CSTM-183 Epic depends on this skeleton being in place.
+This is the foundational ticket for the runtime library — subsequent CSTM-186+ stories build on this skeleton.
 
 ---
 

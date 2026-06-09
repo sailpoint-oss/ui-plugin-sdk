@@ -10,14 +10,14 @@ export default [
 		ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**']
 	},
 	{
-		files: ['packages/*/src/**/*.ts', 'packages/*/__tests__/**/*.ts'],
+		files: ['src/**/*.ts', '__tests__/**/*.ts'],
 		languageOptions: {
 			parser: typescriptParser,
 			parserOptions: {
 				sourceType: 'module'
 			},
 			globals: {
-				...globals.node,
+				...globals.browser,
 				...globals.jest
 			}
 		},
@@ -92,23 +92,7 @@ export default [
 		}
 	},
 	{
-		files: ['packages/plugin-cli/**/*.ts'],
-		languageOptions: {
-			globals: {
-				...globals.node
-			}
-		}
-	},
-	{
-		files: ['packages/ui-plugin-sdk/**/*.ts'],
-		languageOptions: {
-			globals: {
-				...globals.browser
-			}
-		}
-	},
-	{
-		files: ['packages/*/__tests__/**/*.spec.ts'],
+		files: ['__tests__/**/*.spec.ts'],
 		rules: {
 			'@typescript-eslint/no-explicit-any': 'off',
 			'@typescript-eslint/no-unused-vars': ['error', { vars: 'local', args: 'none' }]

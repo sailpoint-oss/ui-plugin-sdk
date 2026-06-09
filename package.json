@@ -1,21 +1,31 @@
 {
-	"name": "ui-plugin-sdk",
+	"name": "@sailpoint/ui-plugin-sdk",
 	"version": "0.0.0",
-	"private": true,
+	"description": "Browser runtime library for SailPoint ISC UI plugins",
 	"type": "module",
-	"description": "SailPoint UI Plugin SDK — runtime library and CLI tooling for ISC UI plugin development",
 	"license": "MIT",
 	"engines": {
 		"node": ">=22"
 	},
-	"packageManager": "pnpm@9.15.4",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
 	"scripts": {
-		"lint": "eslint 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts'",
-		"lint:fix": "eslint --fix 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts'",
-		"format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts'",
-		"format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts'",
+		"build": "tsc",
+		"lint": "eslint 'src/**/*.ts' '__tests__/**/*.ts'",
+		"lint:fix": "eslint --fix 'src/**/*.ts' '__tests__/**/*.ts'",
+		"format": "prettier --write 'src/**/*.ts' '__tests__/**/*.ts'",
+		"format:check": "prettier --check 'src/**/*.ts' '__tests__/**/*.ts'",
 		"test": "jest",
-		"typecheck": "tsc --noEmit -p packages/plugin-cli/tsconfig.json && tsc --noEmit -p packages/ui-plugin-sdk/tsconfig.json"
+		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
 		"@commitlint/cli": "^19.8.1",

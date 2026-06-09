@@ -6,55 +6,50 @@
 **Status:** In Progress
 **Assignee:** Patrick Dowd
 **Reporter/Creator:** Jeremy Gooch
-**Priority:** Unspecified
-**Labels:** None
-**Components:** None
 **Project:** Customizations (CSTM)
 
 ## Parent Epic
 
 **Epic:** [CSTM-183](https://sailpoint.atlassian.net/browse/CSTM-183) — UI Plugin SDK
-**Epic Status:** Backlog
 
-## Description
+## Original Description (Jira — stale)
 
-Establish the dedicated repository for the UI Plugin SDK, completely independent of the `saas-ui-monorepo`, and create the foundational structure needed for developers to immediately start writing code.
+> Establish the dedicated repository for the UI Plugin SDK, completely independent of the `saas-ui-monorepo`, and create the foundational structure needed for developers to immediately start writing code.
 
-### Implementation Details
+Original implementation details referenced pnpm/npm workspaces, `@sailpoint/plugin-cli`, and dual Node.js/browser environments.
 
-- Initialize a new git repository (e.g., `ui-plugin-sdk`).
-- Use standard `npm workspaces` (or `pnpm workspaces`) to manage the mono-repo structure without the overhead of heavy tools like Nx.
-- Scaffold the internal packages with basic structural files: `@sailpoint/plugin-cli` and `@sailpoint/ui-plugin-sdk`. (Note: `@sailpoint/create-plugin` is deferred to a separate ticket).
-- Configure root `package.json`, linting, code formatting (Prettier/ESLint), and testing frameworks suitable for Node.js CLI tools and vanilla JavaScript libraries.
-- **Formatting:** Adopt the standard Prettier configurations used in `saas-sp-renderer` and `saas-ui-monorepo` to ensure consistency (e.g., `tabWidth: 4`, `useTabs: true`). Ensure the `@trivago/prettier-plugin-sort-imports` plugin is included.
-- **Linting:** Draw inspiration from the ESLint configurations in `saas-sp-renderer` (extending `standard` and testing rules).
-- **Note on Scope:** The workspace contains both Node.js (CLI) and Browser (Runtime) code. Ensure `tsconfig.json` and ESLint environments (node vs browser) are scoped correctly per package.
+## Revised Scope (2026-06-09)
 
-### Acceptance Criteria
+The repository is a **single-package NPM library** focused exclusively on the browser runtime (`@sailpoint/ui-plugin-sdk`). CLI tooling is decoupled from this repo.
 
-- [ ] Dedicated repository and `npm workspaces` structure are successfully created.
-- [ ] Basic package skeletons are scaffolded and inter-dependencies resolve correctly via the workspace.
-- [ ] Linting and testing commands execute successfully across the workspace.
+### Revised Implementation Details (for Jira / sdk-epic.org Ticket 1)
+
+- Initialize a dedicated git repository (`ui-plugin-sdk`).
+- Set up a **standard, single-package NPM repository** for `@sailpoint/ui-plugin-sdk`.
+- Scaffold the `@sailpoint/ui-plugin-sdk` structure (`src/`, `__tests__/`, `package.json`, `tsconfig.json`).
+- Configure linting, code formatting (Prettier/ESLint), and testing frameworks suitable for a **browser runtime library**.
+- **Formatting:** Adopt Prettier settings from `saas-sp-renderer` / `saas-ui-monorepo` (`tabWidth: 4`, `useTabs: true`, `@trivago/prettier-plugin-sort-imports`).
+- **Linting:** Draw inspiration from ESLint configurations in `saas-sp-renderer` (browser + Jest globals only).
+
+**Removed from scope:**
+- pnpm/npm workspaces monorepo structure
+- `@sailpoint/plugin-cli` package
+- Dual Node.js/browser environment scoping per package
+
+### Revised Acceptance Criteria
+
+- [ ] Dedicated repository and single-package NPM structure are successfully created.
+- [ ] `@sailpoint/ui-plugin-sdk` skeleton is scaffolded with `src/`, tests, and build output to `dist/`.
+- [ ] Linting, formatting, typecheck, and testing commands execute successfully.
 
 ## Sibling Tickets in Epic
 
-| Ticket | Summary | Status |
-|--------|---------|--------|
-| CSTM-184 | SDK Repository Skeleton & Workspace Initialization | In Progress |
-| CSTM-185 | SDK CI/CD Pipeline & NPM Publishing | Backlog |
-| CSTM-186 | Runtime Library - Core Engine & Handshake | Backlog |
-| CSTM-187 | Runtime Library - Context API | Backlog |
-| CSTM-188 | Runtime Library - Token Management & API Fetching | Backlog |
-| CSTM-189 | Runtime Library - Testing Harness | Backlog |
-| CSTM-190 | Workspace Scaffolding CLI (@sailpoint/create-plugin) | Backlog |
-| CSTM-191 | Core CLI Base & State Management (@sailpoint/plugin-cli) | Backlog |
-| CSTM-192 | CLI Command - init | Backlog |
-| CSTM-193 | CLI Command - serve | Backlog |
-| CSTM-194 | CLI Command - build | Backlog |
-| CSTM-195 | CLI Command - deploy | Backlog |
-| CSTM-196 | CLI Commands - Lifecycle Utilities | Backlog |
-| CSTM-197 | CLI E2E Testing Strategy | Backlog |
-| CSTM-198 | UI Integration - Design Tokens Package | Backlog |
-| CSTM-199 | App Shell - Local Dev Interceptor & State Machine | Backlog |
-| CSTM-200 | App Shell - Local Dev Consent & Certificate Fallback UIs | Backlog |
-| CSTM-201 | App Shell - Local Dev Persistent Indicator Badge | Backlog |
+CLI-related tickets (CSTM-190 through CSTM-197) remain in the epic but are **out of scope for this repository**. They will live in a separate CLI repo or delivery path.
+
+| Ticket | Summary | Relevance to this repo |
+|--------|---------|------------------------|
+| CSTM-184 | SDK Repository Skeleton | **This ticket** |
+| CSTM-185 | SDK CI/CD Pipeline & NPM Publishing | Next |
+| CSTM-186–189 | Runtime Library features | In-repo implementation |
+| CSTM-190–197 | CLI tooling | **Decoupled** — not in this repo |
+| CSTM-198–201 | Design tokens / App Shell | Separate concerns |
