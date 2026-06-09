@@ -1,0 +1,21 @@
+---
+description: "Shipmate standards that apply to development work"
+alwaysApply: true
+---
+
+# Shipmate Standards
+
+The following Shipmate standards apply to development work.
+Read the most specific standard first, then expand into the referenced files below.
+
+Always consider security, coding style, architecture, and project context before making changes.
+
+| Standard | Reference |
+|----------|-----------|
+| Accessibility | @.shipmate/standards/accessibility.md |
+| Communication Standards | @.shipmate/standards/communication-standards.md |
+| Components | @.shipmate/standards/components.md |
+| Css | @.shipmate/standards/css.md |
+| Responsive | @.shipmate/standards/responsive.md |
+| Shipmate Project | @.shipmate/standards/shipmate-project.md |
+| Skill Authoring Standards | @.shipmate/standards/skill-authoring-standards.md |

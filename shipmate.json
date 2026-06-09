@@ -1,0 +1,34 @@
+{
+  "coreVersion": "1.0.0-beta.17",
+  "detected": {
+    "frameworks": [],
+    "languages": [],
+    "projectTypes": [],
+    "techStacks": []
+  },
+  "harnesses": [
+    "cursor"
+  ],
+  "name": "ui-plugin-sdk",
+  "policies": {
+    "featureFlags": {
+      "mode": "strong"
+    }
+  },
+  "projectLearn": {
+    "autoRelearn": {
+      "checkOnCommandStart": true,
+      "enabled": true,
+      "warnAfterCommitCount": 25,
+      "warnAfterDays": 30
+    },
+    "generatedAt": "2026-06-09T15:12:00.000Z",
+    "gitSha": "289239f5c47dcf0dab8667a364fdea4936dd124d"
+  },
+  "projectTypes": [],
+  "teams": [
+    "frontend"
+  ],
+  "techStacks": [],
+  "version": "3.0"
+}
