@@ -27,6 +27,14 @@ npm install
 | `npm run test` | Run Jest tests |
 | `npm run typecheck` | TypeScript type checking (no emit) |
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to report issues, propose changes, and run the project locally.
+
 ## License
 
 [MIT](./LICENSE)
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md). Please read it before participating in issues, pull requests, or discussions.
