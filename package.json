@@ -4,8 +4,23 @@
 	"description": "Browser runtime library for SailPoint ISC UI plugins",
 	"type": "module",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/sailpoint-oss/ui-plugin-sdk.git"
+	},
+	"homepage": "https://github.com/sailpoint-oss/ui-plugin-sdk#readme",
+	"bugs": {
+		"url": "https://github.com/sailpoint-oss/ui-plugin-sdk/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"packageManager": "pnpm@10.17.1",
 	"engines": {
 		"node": ">=22"
+	},
+	"pnpm": {
+		"minimumReleaseAge": 1440
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -28,6 +43,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
+		"@changesets/cli": "^2.31.0",
 		"@commitlint/cli": "^19.8.1",
 		"@commitlint/config-conventional": "^19.8.1",
 		"@trivago/prettier-plugin-sort-imports": "^5.2.2",
