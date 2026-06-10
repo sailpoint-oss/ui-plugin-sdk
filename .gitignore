@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Test coverage
+coverage/
+
+# Cache
+.turbo/
+*.tsbuildinfo
+
+# Editor
+.vscode/
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Cursor / Shipmate (local harness — do not commit)
+.cursor/
+.shipmate/
+.shipmate-backup-*
+shipmate.json
+shipmate.json
