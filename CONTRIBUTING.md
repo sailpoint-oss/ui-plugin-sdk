@@ -50,7 +50,7 @@ Before opening a pull request, ensure `build`, `test`, `lint`, `format:check`, a
 # Reporting Issues
 
 We use GitHub issues to track bugs publicly. If you see a bug, please
-[report it here](https://github.com/sailpoint-oss/ui-plugin-sdk/issues/new).
+[report it here](https://github.com/sailpoint-oss/ui-plugin-sdk/issues/new?assignees=&labels=&template=bug-report.md&title=%5BBug%5D+Your+Bug+Report+Here).
 
 Our maintainers _love_ thorough bug reports. **Great bug reports** tend to have:
 
@@ -68,8 +68,8 @@ Our maintainers _love_ thorough bug reports. **Great bug reports** tend to have:
 
 # Making Feature Requests
 
-We use GitHub issues to track feature requests. Please
-[open a new issue](https://github.com/sailpoint-oss/ui-plugin-sdk/issues/new)
+We use GitHub issues to track feature requests. Please use
+[this template](https://github.com/sailpoint-oss/ui-plugin-sdk/issues/new?assignees=&labels=&template=feature-request.md&title=%5BFeature%5D+Your+Feature+Request+Here)
 when requesting a new feature.
 
 **Great feature requests** tend to:
