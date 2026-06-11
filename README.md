@@ -7,25 +7,25 @@ Browser runtime library for SailPoint ISC UI plugins — COIP/iframe handshake a
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) >= 22
-- npm
+- [pnpm](https://pnpm.io/) 10 (`corepack enable`)
 
 ### Setup
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm run lint` | Run ESLint |
-| `npm run lint:fix` | Run ESLint with auto-fix |
-| `npm run format` | Format code with Prettier |
-| `npm run format:check` | Check formatting without writing |
-| `npm run test` | Run Jest tests |
-| `npm run typecheck` | TypeScript type checking (no emit) |
+| `pnpm run build` | Compile TypeScript to `dist/` |
+| `pnpm run lint` | Run ESLint |
+| `pnpm run lint:fix` | Run ESLint with auto-fix |
+| `pnpm run format` | Format code with Prettier |
+| `pnpm run format:check` | Check formatting without writing |
+| `pnpm run test` | Run Jest tests |
+| `pnpm run typecheck` | TypeScript type checking (no emit) |
 
 ## Contributing
 

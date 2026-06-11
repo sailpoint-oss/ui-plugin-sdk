@@ -34,14 +34,14 @@ covers the project.
 
 ## Development Setup
 
-Prerequisites: [Node.js](https://nodejs.org/) >= 22 and npm.
+Prerequisites: [Node.js](https://nodejs.org/) >= 22 and [pnpm](https://pnpm.io/) 10 (`corepack enable`).
 
 ```bash
-npm install
-npm run build
-npm test
-npm run lint
-npm run typecheck
+pnpm install
+pnpm run build
+pnpm test
+pnpm run lint
+pnpm run typecheck
 ```
 
 Before opening a pull request, ensure `build`, `test`, `lint`, `format:check`, and
@@ -50,12 +50,12 @@ Before opening a pull request, ensure `build`, `test`, `lint`, `format:check`, a
 # Reporting Issues
 
 We use GitHub issues to track bugs publicly. If you see a bug, please
-[report it here](https://github.com/sailpoint-oss/ui-plugin-sdk/issues/new).
+[report it here](https://github.com/sailpoint-oss/ui-plugin-sdk/issues/new?assignees=&labels=&template=bug-report.md&title=%5BBug%5D+Your+Bug+Report+Here).
 
 Our maintainers _love_ thorough bug reports. **Great bug reports** tend to have:
 
 - A quick summary and/or description
-- Package version (`npm ls @sailpoint/ui-plugin-sdk` or the version from `package.json`)
+- Package version (`pnpm ls @sailpoint/ui-plugin-sdk` or the version from `package.json`)
 - Steps to reproduce
   - Be specific!
   - Give sample code if you can.
@@ -68,8 +68,8 @@ Our maintainers _love_ thorough bug reports. **Great bug reports** tend to have:
 
 # Making Feature Requests
 
-We use GitHub issues to track feature requests. Please
-[open a new issue](https://github.com/sailpoint-oss/ui-plugin-sdk/issues/new)
+We use GitHub issues to track feature requests. Please use
+[this template](https://github.com/sailpoint-oss/ui-plugin-sdk/issues/new?assignees=&labels=&template=feature-request.md&title=%5BFeature%5D+Your+Feature+Request+Here)
 when requesting a new feature.
 
 **Great feature requests** tend to:
