@@ -438,8 +438,7 @@ describe('engine and client branch coverage', () => {
 			sourceWindow,
 			targetWindow,
 			targetOrigin: TRUSTED_ORIGIN,
-			now: () => NOW,
-			getAuthToken: () => 'token'
+			now: () => NOW
 		});
 		client.start();
 
@@ -485,11 +484,13 @@ describe('handshake branch coverage', () => {
 
 		const handshake = new RuntimeHandshake({
 			engine,
-			getAuthToken: () => 'jwt-token',
-			getInitPayload: () => ({ pluginId: 'idempotent' })
+			requestTimeoutMs: 500
 		});
 
-		const firstPass = handshake.perform();
+		const firstPass = handshake.perform({
+			authToken: 'jwt-token',
+			initPayload: { pluginId: 'idempotent' }
+		});
 		sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_PLUGIN_READY_REQ, 'ready-1', {}));
 		await Promise.resolve();
 		await Promise.resolve();
@@ -507,7 +508,10 @@ describe('handshake branch coverage', () => {
 		await firstPass;
 
 		const messageCountAfterFirstHandshake = targetWindow.sentMessages.length;
-		await handshake.perform();
+		await handshake.perform({
+			authToken: 'jwt-token',
+			initPayload: { pluginId: 'idempotent' }
+		});
 		expect(targetWindow.sentMessages.length).toBe(messageCountAfterFirstHandshake);
 	});
 });

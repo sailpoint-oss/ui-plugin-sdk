@@ -287,7 +287,7 @@ describe('RuntimeEngine', () => {
 });
 
 describe('PluginRuntimeClient', () => {
-	it('performs handshake in READY -> token -> init order', async () => {
+	it('performs plugin-side initialize flow in READY -> token -> init order', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
 		const client = new PluginRuntimeClient({
@@ -295,56 +295,54 @@ describe('PluginRuntimeClient', () => {
 			targetWindow,
 			targetOrigin: TRUSTED_ORIGIN,
 			now: () => NOW,
-			getAuthToken: () => 'jwt-token',
-			getInitPayload: () => ({
-				pluginId: 'hr-plugin'
-			}),
 			requestTimeoutMs: 500
 		});
 
 		client.start();
 
-		const handshakePromise = client.handshake();
-		/**
-		 * Handshake starts by waiting for inbound READY from plugin iframe.
-		 */
-		sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_PLUGIN_READY_REQ, 'ready-1', {}));
-		await Promise.resolve();
+		const initializePromise = client.initialize();
 
-		const readyResponse = findAndRemoveMessageByType<RuntimeResponseEnvelope>(
+		const readyRequest = findAndRemoveMessageByType<RuntimeRequestEnvelope>(
 			targetWindow,
-			MESSAGE_TYPES.SP_PLUGIN_READY_RES
+			MESSAGE_TYPES.SP_PLUGIN_READY_REQ
 		);
-		expect(readyResponse.requestId).toBe('ready-1');
-		await Promise.resolve();
-
-		const tokenRequest = findAndRemoveMessageByType<RuntimeRequestEnvelope>(
-			targetWindow,
-			MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ
-		);
-		expect(tokenRequest.payload).toEqual({ token: 'jwt-token' });
-
+		expect(readyRequest.payload).toEqual({ protocolVersion: COIP_PROTOCOL_VERSION });
 		sourceWindow.emit(
-			makeResponse(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES, tokenRequest.requestId, {
-				delivered: true
+			makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, {
+				ready: true
 			})
 		);
 		await Promise.resolve();
-		await Promise.resolve();
-
-		const initRequest = findAndRemoveMessageByType<RuntimeRequestEnvelope>(
-			targetWindow,
-			MESSAGE_TYPES.SP_PLUGIN_INIT_REQ
-		);
-		expect(initRequest.payload).toEqual({ pluginId: 'hr-plugin' });
 
 		sourceWindow.emit(
-			makeResponse(MESSAGE_TYPES.SP_PLUGIN_INIT_RES, initRequest.requestId, {
-				initialised: true
+			makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-delivery-1', {
+				token: 'jwt-token'
 			})
 		);
+		await Promise.resolve();
+		const tokenDeliveryResponse = findAndRemoveMessageByType<RuntimeResponseEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES
+		);
+		expect(tokenDeliveryResponse.requestId).toBe('token-delivery-1');
 
-		await expect(handshakePromise).resolves.toBeUndefined();
+		const contextPayload = {
+			tenant: { id: 'tenant-1' },
+			user: { id: 'user-1' },
+			page: { id: 'page-1' },
+			slot: { id: 'slot-1' }
+		};
+
+		sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'plugin-init-1', contextPayload));
+		await Promise.resolve();
+		const initResponse = findAndRemoveMessageByType<RuntimeResponseEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_PLUGIN_INIT_RES
+		);
+		expect(initResponse.requestId).toBe('plugin-init-1');
+
+		await expect(initializePromise).resolves.toBeUndefined();
+		await expect(client.getContext()).resolves.toEqual(contextPayload);
 	});
 
 	it('supports post-handshake token and viewport APIs', async () => {
@@ -355,12 +353,38 @@ describe('PluginRuntimeClient', () => {
 			targetWindow,
 			targetOrigin: TRUSTED_ORIGIN,
 			now: () => NOW,
-			getAuthToken: () => 'jwt-token'
+			requestTimeoutMs: 500
 		});
 
 		client.start();
+		const initializePromise = client.initialize();
+		const readyRequest = findAndRemoveMessageByType<RuntimeRequestEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+		);
+		sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+		await Promise.resolve();
+		sourceWindow.emit(
+			makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-delivery-2', {
+				token: 'jwt-token'
+			})
+		);
+		await Promise.resolve();
+		findAndRemoveMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
+		sourceWindow.emit(
+			makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'plugin-init-2', {
+				tenant: { id: 'tenant-1' },
+				user: { id: 'user-1' },
+				page: { id: 'page-1' },
+				slot: { id: 'slot-1' }
+			})
+		);
+		await Promise.resolve();
+		findAndRemoveMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_PLUGIN_INIT_RES);
+		await initializePromise;
 
 		const currentTokenPromise = client.getCurrentToken();
+		await Promise.resolve();
 		const tokenRequest = findAndRemoveMessageByType<RuntimeRequestEnvelope>(
 			targetWindow,
 			MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ
@@ -375,8 +399,10 @@ describe('PluginRuntimeClient', () => {
 
 		const onTokenUpdate = jest.fn();
 		const onViewportUpdate = jest.fn();
+		const onTokenUpdateSimple = jest.fn();
 		const unsubscribeToken = client.onTokenUpdate(onTokenUpdate);
 		const unsubscribeViewport = client.onViewportUpdate(onViewportUpdate);
+		const unsubscribeTokenSimple = client.events.onTokenUpdate(onTokenUpdateSimple);
 
 		sourceWindow.emit({
 			type: MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT,
@@ -392,9 +418,11 @@ describe('PluginRuntimeClient', () => {
 		});
 
 		expect(onTokenUpdate).toHaveBeenCalledWith({ token: 'rotated-token' });
+		expect(onTokenUpdateSimple).toHaveBeenCalledWith('rotated-token');
 		expect(onViewportUpdate).toHaveBeenCalledWith({ width: 800, height: 600 });
 
 		unsubscribeToken();
 		unsubscribeViewport();
+		unsubscribeTokenSimple();
 	});
 });

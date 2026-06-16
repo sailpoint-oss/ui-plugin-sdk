@@ -1,12 +1,13 @@
-import { PluginRuntimeClient, RuntimeEngine, VERSION } from '../src/index';
+import * as sdk from '../src/index';
 
 describe('@sailpoint/ui-plugin-sdk', () => {
 	it('should export VERSION', () => {
-		expect(VERSION).toBe('0.0.0');
+		expect(sdk.VERSION).toBe('0.0.0');
 	});
 
-	it('should export runtime classes', () => {
-		expect(PluginRuntimeClient).toBeDefined();
-		expect(RuntimeEngine).toBeDefined();
+	it('should expose plugin-facing API surface only', () => {
+		expect(sdk.PluginRuntimeClient).toBeDefined();
+		expect('RuntimeEngine' in sdk).toBe(false);
+		expect('RuntimeHandshake' in sdk).toBe(false);
 	});
 });
