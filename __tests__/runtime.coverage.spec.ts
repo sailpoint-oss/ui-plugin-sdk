@@ -6,7 +6,7 @@ import type {
 	RuntimeRequestEnvelope,
 	RuntimeResponseEnvelope
 } from '../src/protocol/types';
-import { PluginRuntimeClient } from '../src/runtime/client';
+import { PluginRuntimeClient, SailPointPluginSDK } from '../src/runtime/client';
 import { RuntimeEngine, RuntimeEngineError } from '../src/runtime/engine';
 import { RuntimeHandshake } from '../src/runtime/handshake';
 import { isEventType, isRequestType, isResponseType, validateEnvelope, validateOrigin } from '../src/runtime/validator';
@@ -467,6 +467,224 @@ describe('engine and client branch coverage', () => {
 		await expect(directRequest).resolves.toEqual({ ok: true });
 
 		client.stop();
+	});
+});
+
+describe('plugin SDK branch coverage', () => {
+	const completeInitialization = async (
+		sdk: SailPointPluginSDK,
+		sourceWindow: FakeSourceWindow,
+		targetWindow: FakeTargetWindow
+	): Promise<void> => {
+		const initializePromise = sdk.initialize();
+
+		const readyRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+		);
+		sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+		await Promise.resolve();
+
+		sourceWindow.emit(
+			makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-delivery', {
+				token: 'cached-token'
+			})
+		);
+		await Promise.resolve();
+		shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
+
+		sourceWindow.emit(
+			makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'init-request', {
+				tenant: { id: 'tenant-1' },
+				user: { id: 'user-1' },
+				page: { id: 'page-1' },
+				slot: { id: 'slot-1' }
+			})
+		);
+		await Promise.resolve();
+		shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_PLUGIN_INIT_RES);
+
+		await initializePromise;
+	};
+
+	it('uses window.parent when no explicit target window is provided', () => {
+		const sourceWindow = new FakeSourceWindow();
+		const sdk = new SailPointPluginSDK({
+			sourceWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		expect(sdk).toBeDefined();
+	});
+
+	it('rejects initialization when token delivery payload is not an object', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new SailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		const initializePromise = sdk.initialize();
+		const readyRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+		);
+		sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+		await Promise.resolve();
+
+		sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-invalid', null));
+		await expect(initializePromise).rejects.toMatchObject({
+			details: {
+				code: 'HANDSHAKE_FAILED',
+				message: 'Auth token delivery payload must be an object.'
+			}
+		});
+	});
+
+	it('rejects initialization when token value is missing', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new SailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		const initializePromise = sdk.initialize();
+		const readyRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+		);
+		sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+		await Promise.resolve();
+
+		sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-missing', {}));
+		await expect(initializePromise).rejects.toMatchObject({
+			details: {
+				code: 'HANDSHAKE_FAILED',
+				message: 'Auth token delivery payload must include a non-empty token.'
+			}
+		});
+	});
+
+	it('rejects initialization when init payload is not plugin context shaped', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new SailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		const initializePromise = sdk.initialize();
+		const readyRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+		);
+		sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+		await Promise.resolve();
+		sourceWindow.emit(
+			makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-valid', {
+				token: 'jwt-token'
+			})
+		);
+		await Promise.resolve();
+		shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
+
+		sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'init-invalid', { page: {} }));
+		await expect(initializePromise).rejects.toMatchObject({
+			details: {
+				code: 'HANDSHAKE_FAILED',
+				message: 'Plugin init payload did not match expected context shape.'
+			}
+		});
+	});
+
+	it('throws from getContext when initialize does not hydrate context', async () => {
+		class BrokenContextSdk extends SailPointPluginSDK {
+			public override async initialize(): Promise<void> {
+				return Promise.resolve();
+			}
+		}
+
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new BrokenContextSdk({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		await expect(sdk.getContext()).rejects.toMatchObject({
+			details: {
+				code: 'HANDSHAKE_FAILED',
+				message: 'Plugin context is not available after initialization.'
+			}
+		});
+	});
+
+	it('returns cached token on non-force refresh and delegates events facade', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new SailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+		const messageCountBeforeTokenRead = targetWindow.sentMessages.length;
+		await expect(sdk.getToken()).resolves.toBe('cached-token');
+		expect(targetWindow.sentMessages.length).toBe(messageCountBeforeTokenRead);
+
+		const onViewportChange = jest.fn();
+		const unsubscribeViewport = sdk.events.onViewportChange(onViewportChange);
+		sourceWindow.emit({
+			type: MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT,
+			payload: { width: 900, height: 700 },
+			protocolVersion: COIP_PROTOCOL_VERSION,
+			timestamp: NOW
+		});
+		expect(onViewportChange).toHaveBeenCalledWith({ width: 900, height: 700 });
+		unsubscribeViewport();
+	});
+
+	it('cleans up token subscription on stop and handshake delegates to initialize', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new SailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+		sdk.stop();
+
+		class HandshakeDelegationSdk extends SailPointPluginSDK {
+			public called = false;
+			public override async initialize(): Promise<void> {
+				this.called = true;
+			}
+		}
+
+		const delegationSdk = new HandshakeDelegationSdk({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+		await delegationSdk.handshake();
+		expect(delegationSdk.called).toBe(true);
 	});
 });
 
