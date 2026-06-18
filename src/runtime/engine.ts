@@ -11,98 +11,23 @@ import type {
 	MessageTarget,
 	RequestMessageType,
 	ResponseMessageType,
-	RuntimeErrorDetails,
 	RuntimeEventEnvelope,
-	RuntimeMessageEvent,
 	RuntimeRequestEnvelope,
 	RuntimeResponseEnvelope
 } from '../protocol/types';
+import type { RuntimeErrorDetails } from '../protocol/types';
+import type { RuntimeMessageEvent } from '../protocol/types';
+import { RuntimeEngineError, normalizeRuntimeError } from './engine.error';
+import type {
+	PendingRequest,
+	PendingRequestWaiter,
+	RuntimeEngineConfig,
+	RuntimeRequestHandler,
+	SendRequestOptions,
+	WaitForRequestOptions
+} from './engine.types';
+import { asMessageEvent, createRequestId, defaultSourceWindow, toResponseType } from './engine.utils';
 import { isEventType, isRequestType, isResponseType, validateEnvelope, validateOrigin } from './validator';
-
-interface RuntimeEngineConfig {
-	targetWindow: MessageTarget;
-	targetOrigin: string;
-	sourceWindow?: MessageSource;
-	protocolVersion?: string;
-	requestTimeoutMs?: number;
-	maxClockSkewMs?: number;
-	now?: () => number;
-}
-
-interface SendRequestOptions {
-	timeoutMs?: number;
-}
-
-interface WaitForRequestOptions {
-	timeoutMs?: number;
-}
-
-interface PendingRequest {
-	expectedResponseType: ResponseMessageType;
-	resolve: (value: unknown) => void;
-	reject: (error: Error) => void;
-	timeoutHandle: ReturnType<typeof setTimeout>;
-}
-
-interface PendingRequestWaiter {
-	resolve: (value: RuntimeRequestEnvelope) => void;
-	reject: (error: Error) => void;
-	timeoutHandle: ReturnType<typeof setTimeout>;
-}
-
-export class RuntimeEngineError extends Error {
-	public readonly details: RuntimeErrorDetails;
-
-	public constructor(details: RuntimeErrorDetails) {
-		super(details.message);
-		this.name = 'RuntimeEngineError';
-		this.details = details;
-	}
-}
-
-/**
- * Converts request message names into expected response message names.
- */
-const toResponseType = (requestType: RequestMessageType): ResponseMessageType =>
-	requestType.replace(/_REQ$/, '_RES') as ResponseMessageType;
-
-const defaultSourceWindow = (): MessageSource => {
-	if (typeof window === 'undefined') {
-		throw new Error('sourceWindow is required when window is unavailable.');
-	}
-
-	return window as unknown as MessageSource;
-};
-
-/**
- * Creates a compact correlation id for request/response mapping.
- * Example: "lxa9m2f3-k3p8t2qw"
- */
-const createRequestId = (): string => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-
-const normalizeError = (error: unknown): RuntimeErrorDetails => {
-	if (error instanceof RuntimeEngineError) {
-		return error.details;
-	}
-
-	if (error instanceof Error) {
-		return {
-			code: 'HANDSHAKE_FAILED',
-			message: error.message
-		};
-	}
-
-	return {
-		code: 'HANDSHAKE_FAILED',
-		message: 'Unknown runtime engine error.'
-	};
-};
-
-const asMessageEvent = (event: RuntimeMessageEvent): RuntimeMessageEvent => ({
-	data: event.data,
-	origin: event.origin,
-	source: event.source
-});
 
 /**
  * Low-level COIP transport runtime.
@@ -119,10 +44,7 @@ export class RuntimeEngine {
 
 	private readonly pendingRequests = new Map<string, PendingRequest>();
 	private readonly requestWaiters = new Map<RequestMessageType, PendingRequestWaiter[]>();
-	private readonly requestHandlers = new Map<
-		RequestMessageType,
-		(request: RuntimeRequestEnvelope) => Promise<unknown> | unknown
-	>();
+	private readonly requestHandlers = new Map<RequestMessageType, RuntimeRequestHandler>();
 	private readonly eventSubscribers = new Map<EventMessageType, Set<(event: RuntimeEventEnvelope) => void>>();
 
 	private started = false;
@@ -438,7 +360,7 @@ export class RuntimeEngine {
 			const payload = await requestHandler(requestEnvelope);
 			this.respond(toResponseType(requestType), requestEnvelope.requestId, payload);
 		} catch (error: unknown) {
-			this.sendError(normalizeError(error), requestEnvelope.requestId);
+			this.sendError(normalizeRuntimeError(error), requestEnvelope.requestId);
 		}
 	}
 
@@ -553,4 +475,5 @@ export class RuntimeEngine {
 	}
 }
 
+export { RuntimeEngineError } from './engine.error';
 export type { RuntimeEngineConfig };
