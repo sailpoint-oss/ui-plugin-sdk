@@ -11,4 +11,19 @@ describe('@sailpoint/ui-plugin-sdk', () => {
 		expect('RuntimeHandshake' in sdk).toBe(false);
 		expect('InternalSailPointPluginSDK' in sdk).toBe(false);
 	});
+
+	it('should not expose initialize on created SDK', () => {
+		const createdSdk = sdk.createSDK({
+			targetOrigin: 'https://plugins.sailpoint.test',
+			targetWindow: {
+				postMessage: () => undefined
+			},
+			sourceWindow: {
+				addEventListener: () => undefined,
+				removeEventListener: () => undefined
+			}
+		});
+
+		expect('initialize' in createdSdk).toBe(false);
+	});
 });

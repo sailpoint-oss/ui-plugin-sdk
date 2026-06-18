@@ -5,7 +5,6 @@ export const createSDK = (config: SailPointPluginSDKConfig): SailPointPluginSDK 
 	const internalSDK = new InternalSailPointPluginSDK(config);
 
 	return {
-		initialize: () => internalSDK.initialize(),
 		getContext: () => internalSDK.getContext(),
 		api: {
 			getToken: (forceRefresh?: boolean) => internalSDK.getToken(forceRefresh)

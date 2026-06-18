@@ -6,7 +6,6 @@ import type {
 } from '../runtime/client';
 
 export interface SailPointPluginSDK {
-	initialize(): Promise<void>;
 	getContext(): Promise<PluginContext>;
 	api: {
 		getToken(forceRefresh?: boolean): Promise<string>;
