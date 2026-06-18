@@ -28,7 +28,7 @@ interface PluginContext {
 	slot: SlotContext;
 }
 
-interface SailPointPluginSDKConfig extends Omit<RuntimeEngineConfig, 'targetWindow'> {
+interface InternalSailPointPluginSDKConfig extends Omit<RuntimeEngineConfig, 'targetWindow'> {
 	parentWindow?: MessageTarget;
 	targetWindow?: MessageTarget;
 }
@@ -79,10 +79,10 @@ const isPluginContext = (payload: unknown): payload is PluginContext => {
 };
 
 /**
- * Plugin-facing SDK facade.
- * Initialization handshake and token/context mechanics stay internal.
+ * Internal concrete SDK implementation.
+ * The public package surface should expose a narrow interface + factory.
  */
-export class SailPointPluginSDK {
+export class InternalSailPointPluginSDK {
 	private readonly engine: RuntimeEngine;
 	private readonly requestTimeoutMs?: number;
 	private readonly protocolVersion: string;
@@ -100,7 +100,7 @@ export class SailPointPluginSDK {
 			})
 	};
 
-	public constructor(config: SailPointPluginSDKConfig) {
+	public constructor(config: InternalSailPointPluginSDKConfig) {
 		const targetWindow = config.parentWindow ?? config.targetWindow ?? defaultParentWindow();
 		this.engine = new RuntimeEngine({
 			...config,
@@ -148,22 +148,31 @@ export class SailPointPluginSDK {
 			MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ,
 			this.withTimeout()
 		);
-		this.currentToken = readToken(tokenDeliveryRequest.payload);
-		this.engine.respond(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES, tokenDeliveryRequest.requestId, {
-			received: true
-		});
+		try {
+			this.currentToken = readToken(tokenDeliveryRequest.payload);
+			this.engine.respond(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES, tokenDeliveryRequest.requestId, {
+				received: true
+			});
+		} catch (error: unknown) {
+			throw this.respondWithError(tokenDeliveryRequest.requestId, error);
+		}
 
 		const initRequest = await this.engine.waitForRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, this.withTimeout());
-		if (!isPluginContext(initRequest.payload)) {
-			throw new RuntimeEngineError({
-				code: 'HANDSHAKE_FAILED',
-				message: 'Plugin init payload did not match expected context shape.'
+		try {
+			if (!isPluginContext(initRequest.payload)) {
+				throw new RuntimeEngineError({
+					code: 'HANDSHAKE_FAILED',
+					message: 'Plugin init payload did not match expected context shape.'
+				});
+			}
+
+			this.pluginContext = initRequest.payload;
+			this.engine.respond(MESSAGE_TYPES.SP_PLUGIN_INIT_RES, initRequest.requestId, {
+				initialized: true
 			});
+		} catch (error: unknown) {
+			throw this.respondWithError(initRequest.requestId, error);
 		}
-		this.pluginContext = initRequest.payload;
-		this.engine.respond(MESSAGE_TYPES.SP_PLUGIN_INIT_RES, initRequest.requestId, {
-			initialized: true
-		});
 
 		this.initialized = true;
 	}
@@ -243,22 +252,48 @@ export class SailPointPluginSDK {
 			timeoutMs: this.requestTimeoutMs
 		};
 	}
+
+	private respondWithError(requestId: string, error: unknown): RuntimeEngineError {
+		const runtimeError = this.toRuntimeEngineError(error);
+		this.engine.respond(MESSAGE_TYPES.SP_ERROR_RES, requestId, {
+			error: runtimeError.details
+		});
+		return runtimeError;
+	}
+
+	private toRuntimeEngineError(error: unknown): RuntimeEngineError {
+		if (error instanceof RuntimeEngineError) {
+			return error;
+		}
+
+		if (error instanceof Error) {
+			return new RuntimeEngineError({
+				code: 'HANDSHAKE_FAILED',
+				message: error.message
+			});
+		}
+
+		return new RuntimeEngineError({
+			code: 'HANDSHAKE_FAILED',
+			message: 'Unknown handshake error.'
+		});
+	}
 }
 
 /**
  * Backwards-compatible alias while migrating to SailPointPluginSDK naming.
  */
-export class PluginRuntimeClient extends SailPointPluginSDK {}
+export class PluginRuntimeClient extends InternalSailPointPluginSDK {}
 
-type PluginRuntimeClientConfig = SailPointPluginSDKConfig;
+type PluginRuntimeClientConfig = InternalSailPointPluginSDKConfig;
 
 export type {
 	CurrentTokenResponsePayload,
 	PageContext,
 	PluginContext,
 	PluginContext as InitializationContext,
+	InternalSailPointPluginSDKConfig,
 	PluginRuntimeClientConfig,
-	SailPointPluginSDKConfig,
 	SlotContext,
 	TenantContext,
 	TokenUpdatePayload,

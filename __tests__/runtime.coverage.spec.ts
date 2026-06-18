@@ -6,7 +6,7 @@ import type {
 	RuntimeRequestEnvelope,
 	RuntimeResponseEnvelope
 } from '../src/protocol/types';
-import { PluginRuntimeClient, SailPointPluginSDK } from '../src/runtime/client';
+import { InternalSailPointPluginSDK, PluginRuntimeClient } from '../src/runtime/client';
 import { RuntimeEngine, RuntimeEngineError } from '../src/runtime/engine';
 import { RuntimeHandshake } from '../src/runtime/handshake';
 import { isEventType, isRequestType, isResponseType, validateEnvelope, validateOrigin } from '../src/runtime/validator';
@@ -472,7 +472,7 @@ describe('engine and client branch coverage', () => {
 
 describe('plugin SDK branch coverage', () => {
 	const completeInitialization = async (
-		sdk: SailPointPluginSDK,
+		sdk: InternalSailPointPluginSDK,
 		sourceWindow: FakeSourceWindow,
 		targetWindow: FakeTargetWindow
 	): Promise<void> => {
@@ -509,7 +509,7 @@ describe('plugin SDK branch coverage', () => {
 
 	it('uses window.parent when no explicit target window is provided', () => {
 		const sourceWindow = new FakeSourceWindow();
-		const sdk = new SailPointPluginSDK({
+		const sdk = new InternalSailPointPluginSDK({
 			sourceWindow,
 			targetOrigin: TRUSTED_ORIGIN,
 			now: () => NOW
@@ -521,7 +521,7 @@ describe('plugin SDK branch coverage', () => {
 	it('rejects initialization when token delivery payload is not an object', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
-		const sdk = new SailPointPluginSDK({
+		const sdk = new InternalSailPointPluginSDK({
 			sourceWindow,
 			targetWindow,
 			targetOrigin: TRUSTED_ORIGIN,
@@ -543,12 +543,20 @@ describe('plugin SDK branch coverage', () => {
 				message: 'Auth token delivery payload must be an object.'
 			}
 		});
+		const errorResponse = shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_ERROR_RES);
+		expect(errorResponse.requestId).toBe('token-invalid');
+		expect(errorResponse.payload).toMatchObject({
+			error: {
+				code: 'HANDSHAKE_FAILED',
+				message: 'Auth token delivery payload must be an object.'
+			}
+		});
 	});
 
 	it('rejects initialization when token value is missing', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
-		const sdk = new SailPointPluginSDK({
+		const sdk = new InternalSailPointPluginSDK({
 			sourceWindow,
 			targetWindow,
 			targetOrigin: TRUSTED_ORIGIN,
@@ -570,12 +578,20 @@ describe('plugin SDK branch coverage', () => {
 				message: 'Auth token delivery payload must include a non-empty token.'
 			}
 		});
+		const errorResponse = shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_ERROR_RES);
+		expect(errorResponse.requestId).toBe('token-missing');
+		expect(errorResponse.payload).toMatchObject({
+			error: {
+				code: 'HANDSHAKE_FAILED',
+				message: 'Auth token delivery payload must include a non-empty token.'
+			}
+		});
 	});
 
 	it('rejects initialization when init payload is not plugin context shaped', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
-		const sdk = new SailPointPluginSDK({
+		const sdk = new InternalSailPointPluginSDK({
 			sourceWindow,
 			targetWindow,
 			targetOrigin: TRUSTED_ORIGIN,
@@ -604,10 +620,18 @@ describe('plugin SDK branch coverage', () => {
 				message: 'Plugin init payload did not match expected context shape.'
 			}
 		});
+		const errorResponse = shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_ERROR_RES);
+		expect(errorResponse.requestId).toBe('init-invalid');
+		expect(errorResponse.payload).toMatchObject({
+			error: {
+				code: 'HANDSHAKE_FAILED',
+				message: 'Plugin init payload did not match expected context shape.'
+			}
+		});
 	});
 
 	it('throws from getContext when initialize does not hydrate context', async () => {
-		class BrokenContextSdk extends SailPointPluginSDK {
+		class BrokenContextSdk extends InternalSailPointPluginSDK {
 			public override async initialize(): Promise<void> {
 				return Promise.resolve();
 			}
@@ -633,7 +657,7 @@ describe('plugin SDK branch coverage', () => {
 	it('returns cached token on non-force refresh and delegates events facade', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
-		const sdk = new SailPointPluginSDK({
+		const sdk = new InternalSailPointPluginSDK({
 			sourceWindow,
 			targetWindow,
 			targetOrigin: TRUSTED_ORIGIN,
@@ -660,7 +684,7 @@ describe('plugin SDK branch coverage', () => {
 	it('cleans up token subscription on stop and handshake delegates to initialize', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
-		const sdk = new SailPointPluginSDK({
+		const sdk = new InternalSailPointPluginSDK({
 			sourceWindow,
 			targetWindow,
 			targetOrigin: TRUSTED_ORIGIN,
@@ -670,7 +694,7 @@ describe('plugin SDK branch coverage', () => {
 		await completeInitialization(sdk, sourceWindow, targetWindow);
 		sdk.stop();
 
-		class HandshakeDelegationSdk extends SailPointPluginSDK {
+		class HandshakeDelegationSdk extends InternalSailPointPluginSDK {
 			public called = false;
 			public override async initialize(): Promise<void> {
 				this.called = true;
