@@ -16,10 +16,37 @@ interface CurrentTokenResponsePayload {
 	token: string;
 }
 
-type TenantContext = Record<string, unknown>;
-type UserContext = Record<string, unknown>;
-type PageContext = Record<string, unknown>;
-type SlotContext = Record<string, unknown>;
+interface TenantContext {
+	id: string;
+	scriptName: string;
+	org: string;
+	pod?: string;
+	[key: string]: unknown;
+}
+
+interface UserContext {
+	id: string;
+	displayName: string;
+	email: string;
+	uid?: string;
+	alias?: string;
+	amsRights?: string[];
+	capabilities?: string[];
+	uiRights?: string[];
+	lastLoginTimestamp?: number;
+	federated?: boolean;
+	mfeSessionHash?: string;
+	[key: string]: unknown;
+}
+
+interface PageContext {
+	route: string;
+	[key: string]: unknown;
+}
+
+interface SlotContext {
+	[key: string]: unknown;
+}
 
 interface PluginContext {
 	tenant: TenantContext;
@@ -39,6 +66,12 @@ const defaultParentWindow = (): MessageTarget => {
 	}
 
 	return window.parent as unknown as MessageTarget;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+const hasStringField = (value: Record<string, unknown>, field: string): boolean => {
+	return typeof value[field] === 'string';
 };
 
 const readToken = (payload: unknown): string => {
@@ -61,20 +94,23 @@ const readToken = (payload: unknown): string => {
 };
 
 const isPluginContext = (payload: unknown): payload is PluginContext => {
-	if (typeof payload !== 'object' || payload === null) {
+	if (!isRecord(payload)) {
 		return false;
 	}
 
-	const context = payload as Record<string, unknown>;
+	const context = payload;
+	if (!isRecord(context.tenant) || !isRecord(context.user) || !isRecord(context.page) || !isRecord(context.slot)) {
+		return false;
+	}
+
 	return (
-		typeof context.tenant === 'object' &&
-		context.tenant !== null &&
-		typeof context.user === 'object' &&
-		context.user !== null &&
-		typeof context.page === 'object' &&
-		context.page !== null &&
-		typeof context.slot === 'object' &&
-		context.slot !== null
+		hasStringField(context.tenant, 'id') &&
+		hasStringField(context.tenant, 'scriptName') &&
+		hasStringField(context.tenant, 'org') &&
+		hasStringField(context.user, 'id') &&
+		hasStringField(context.user, 'displayName') &&
+		hasStringField(context.user, 'email') &&
+		hasStringField(context.page, 'route')
 	);
 };
 

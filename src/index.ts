@@ -6,10 +6,14 @@
  * a plugin-facing abstraction boundary.
  */
 export type {
+	PageContext,
 	PluginContext,
 	SailPointPluginSDK,
 	SailPointPluginSDKConfig,
+	SlotContext,
+	TenantContext,
 	TokenUpdatePayload,
+	UserContext,
 	ViewportUpdatePayload
 } from './public/types';
 export { createSDK } from './public/create-sdk';
