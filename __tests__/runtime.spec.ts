@@ -327,9 +327,9 @@ describe('PluginRuntimeClient', () => {
 		expect(tokenDeliveryResponse.requestId).toBe('token-delivery-1');
 
 		const contextPayload = {
-			tenant: { id: 'tenant-1' },
-			user: { id: 'user-1' },
-			page: { id: 'page-1' },
+			tenant: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
+			user: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
+			page: { route: 'https://plugins.sailpoint.test/page' },
 			slot: { id: 'slot-1' }
 		};
 
@@ -373,9 +373,9 @@ describe('PluginRuntimeClient', () => {
 		findAndRemoveMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
 		sourceWindow.emit(
 			makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'plugin-init-2', {
-				tenant: { id: 'tenant-1' },
-				user: { id: 'user-1' },
-				page: { id: 'page-1' },
+				tenant: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
+				user: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
+				page: { route: 'https://plugins.sailpoint.test/page' },
 				slot: { id: 'slot-1' }
 			})
 		);

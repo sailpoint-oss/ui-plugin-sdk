@@ -1,7 +1,11 @@
 import type {
 	InternalSailPointPluginSDKConfig,
+	PageContext,
 	PluginContext,
+	SlotContext,
+	TenantContext,
 	TokenUpdatePayload,
+	UserContext,
 	ViewportUpdatePayload
 } from '../runtime/client';
 
@@ -18,4 +22,12 @@ export interface SailPointPluginSDK {
 
 export type SailPointPluginSDKConfig = InternalSailPointPluginSDKConfig;
 
-export type { PluginContext, TokenUpdatePayload, ViewportUpdatePayload };
+export type {
+	PageContext,
+	PluginContext,
+	SlotContext,
+	TenantContext,
+	TokenUpdatePayload,
+	UserContext,
+	ViewportUpdatePayload
+};
