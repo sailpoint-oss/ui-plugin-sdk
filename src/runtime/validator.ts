@@ -1,5 +1,6 @@
 import type { EventMessageType, RequestMessageType, ResponseMessageType } from '../protocol/types';
 import type { RuntimeEnvelope, RuntimeErrorCode, RuntimeErrorDetails } from '../protocol/types';
+import { isRecord } from './engine.utils';
 
 interface ValidationOptions {
 	expectedProtocolVersion: string;
@@ -19,8 +20,6 @@ interface ValidationFailure {
 }
 
 export type ValidationResult = ValidationSuccess | ValidationFailure;
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 const hasSuffix = (value: string, suffix: string): boolean => value.endsWith(suffix);
 

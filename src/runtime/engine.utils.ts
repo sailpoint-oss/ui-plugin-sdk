@@ -25,3 +25,5 @@ export const asMessageEvent = (event: RuntimeMessageEvent): RuntimeMessageEvent 
 	origin: event.origin,
 	source: event.source
 });
+
+export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;

@@ -1,64 +1,22 @@
 import { COIP_PROTOCOL_VERSION, MESSAGE_TYPES } from '../protocol/constants';
 import type { EventMessageType, MessageTarget, RequestMessageType, RuntimeRequestEnvelope } from '../protocol/types';
+import type {
+	PageContext,
+	PluginContext,
+	SailPointPluginSDKConfig,
+	SlotContext,
+	TenantContext,
+	TokenUpdatePayload,
+	UserContext,
+	ViewportUpdatePayload
+} from '../public/types';
 import { RuntimeEngine, RuntimeEngineError } from './engine';
-import type { RuntimeEngineConfig } from './engine';
-
-interface ViewportUpdatePayload {
-	width: number;
-	height: number;
-}
-
-interface TokenUpdatePayload {
-	token: string;
-}
+import { isRecord } from './engine.utils';
 
 interface CurrentTokenResponsePayload {
 	token: string;
 }
-
-interface TenantContext {
-	id: string;
-	scriptName: string;
-	org: string;
-	pod?: string;
-	[key: string]: unknown;
-}
-
-interface UserContext {
-	id: string;
-	displayName: string;
-	email: string;
-	uid?: string;
-	alias?: string;
-	amsRights?: string[];
-	capabilities?: string[];
-	uiRights?: string[];
-	lastLoginTimestamp?: number;
-	federated?: boolean;
-	mfeSessionHash?: string;
-	[key: string]: unknown;
-}
-
-interface PageContext {
-	route: string;
-	[key: string]: unknown;
-}
-
-interface SlotContext {
-	[key: string]: unknown;
-}
-
-interface PluginContext {
-	tenant: TenantContext;
-	user: UserContext;
-	page: PageContext;
-	slot: SlotContext;
-}
-
-interface InternalSailPointPluginSDKConfig extends Omit<RuntimeEngineConfig, 'targetWindow'> {
-	parentWindow?: MessageTarget;
-	targetWindow?: MessageTarget;
-}
+type InternalSailPointPluginSDKConfig = SailPointPluginSDKConfig;
 
 const defaultParentWindow = (): MessageTarget => {
 	if (typeof window === 'undefined' || !window.parent) {
@@ -67,8 +25,6 @@ const defaultParentWindow = (): MessageTarget => {
 
 	return window.parent as unknown as MessageTarget;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 const hasStringField = (value: Record<string, unknown>, field: string): boolean => {
 	return typeof value[field] === 'string';

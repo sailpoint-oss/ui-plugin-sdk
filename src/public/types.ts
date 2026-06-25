@@ -1,13 +1,63 @@
-import type {
-	InternalSailPointPluginSDKConfig,
-	PageContext,
-	PluginContext,
-	SlotContext,
-	TenantContext,
-	TokenUpdatePayload,
-	UserContext,
-	ViewportUpdatePayload
-} from '../runtime/client';
+import type { MessageSource, MessageTarget } from '../protocol/types';
+
+export interface TenantContext {
+	id: string;
+	scriptName: string;
+	org: string;
+	pod?: string;
+	[key: string]: unknown;
+}
+
+export interface UserContext {
+	id: string;
+	displayName: string;
+	email: string;
+	uid?: string;
+	alias?: string;
+	amsRights?: string[];
+	capabilities?: string[];
+	uiRights?: string[];
+	lastLoginTimestamp?: number;
+	federated?: boolean;
+	mfeSessionHash?: string;
+	[key: string]: unknown;
+}
+
+export interface PageContext {
+	route: string;
+	[key: string]: unknown;
+}
+
+export interface SlotContext {
+	[key: string]: unknown;
+}
+
+export interface PluginContext {
+	tenant: TenantContext;
+	user: UserContext;
+	page: PageContext;
+	slot: SlotContext;
+}
+
+export interface TokenUpdatePayload {
+	token: string;
+}
+
+export interface ViewportUpdatePayload {
+	width: number;
+	height: number;
+}
+
+export interface SailPointPluginSDKConfig {
+	targetOrigin: string;
+	parentWindow?: MessageTarget;
+	targetWindow?: MessageTarget;
+	sourceWindow?: MessageSource;
+	protocolVersion?: string;
+	requestTimeoutMs?: number;
+	maxClockSkewMs?: number;
+	now?: () => number;
+}
 
 export interface SailPointPluginSDK {
 	getContext(): Promise<PluginContext>;
@@ -19,15 +69,3 @@ export interface SailPointPluginSDK {
 		onTokenUpdate(callback: (newToken: string) => void): () => void;
 	};
 }
-
-export type SailPointPluginSDKConfig = InternalSailPointPluginSDKConfig;
-
-export type {
-	PageContext,
-	PluginContext,
-	SlotContext,
-	TenantContext,
-	TokenUpdatePayload,
-	UserContext,
-	ViewportUpdatePayload
-};
