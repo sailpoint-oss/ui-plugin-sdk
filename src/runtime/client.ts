@@ -1,37 +1,22 @@
 import { COIP_PROTOCOL_VERSION, MESSAGE_TYPES } from '../protocol/constants';
 import type { EventMessageType, MessageTarget, RequestMessageType, RuntimeRequestEnvelope } from '../protocol/types';
+import type {
+	PageContext,
+	PluginContext,
+	SailPointPluginSDKConfig,
+	SlotContext,
+	TenantContext,
+	TokenUpdatePayload,
+	UserContext,
+	ViewportUpdatePayload
+} from '../public/types';
 import { RuntimeEngine, RuntimeEngineError } from './engine';
-import type { RuntimeEngineConfig } from './engine';
-
-interface ViewportUpdatePayload {
-	width: number;
-	height: number;
-}
-
-interface TokenUpdatePayload {
-	token: string;
-}
+import { isRecord } from './engine.utils';
 
 interface CurrentTokenResponsePayload {
 	token: string;
 }
-
-type TenantContext = Record<string, unknown>;
-type UserContext = Record<string, unknown>;
-type PageContext = Record<string, unknown>;
-type SlotContext = Record<string, unknown>;
-
-interface PluginContext {
-	tenant: TenantContext;
-	user: UserContext;
-	page: PageContext;
-	slot: SlotContext;
-}
-
-interface InternalSailPointPluginSDKConfig extends Omit<RuntimeEngineConfig, 'targetWindow'> {
-	parentWindow?: MessageTarget;
-	targetWindow?: MessageTarget;
-}
+type InternalSailPointPluginSDKConfig = SailPointPluginSDKConfig;
 
 const defaultParentWindow = (): MessageTarget => {
 	if (typeof window === 'undefined' || !window.parent) {
@@ -39,6 +24,10 @@ const defaultParentWindow = (): MessageTarget => {
 	}
 
 	return window.parent as unknown as MessageTarget;
+};
+
+const hasStringField = (value: Record<string, unknown>, field: string): boolean => {
+	return typeof value[field] === 'string';
 };
 
 const readToken = (payload: unknown): string => {
@@ -61,20 +50,23 @@ const readToken = (payload: unknown): string => {
 };
 
 const isPluginContext = (payload: unknown): payload is PluginContext => {
-	if (typeof payload !== 'object' || payload === null) {
+	if (!isRecord(payload)) {
 		return false;
 	}
 
-	const context = payload as Record<string, unknown>;
+	const context = payload;
+	if (!isRecord(context.tenant) || !isRecord(context.user) || !isRecord(context.page) || !isRecord(context.slot)) {
+		return false;
+	}
+
 	return (
-		typeof context.tenant === 'object' &&
-		context.tenant !== null &&
-		typeof context.user === 'object' &&
-		context.user !== null &&
-		typeof context.page === 'object' &&
-		context.page !== null &&
-		typeof context.slot === 'object' &&
-		context.slot !== null
+		hasStringField(context.tenant, 'id') &&
+		hasStringField(context.tenant, 'scriptName') &&
+		hasStringField(context.tenant, 'org') &&
+		hasStringField(context.user, 'id') &&
+		hasStringField(context.user, 'displayName') &&
+		hasStringField(context.user, 'email') &&
+		hasStringField(context.page, 'route')
 	);
 };
 
