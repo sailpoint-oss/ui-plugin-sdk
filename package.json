@@ -44,7 +44,7 @@
 	},
 	"devDependencies": {
 		"@changesets/cli": "^2.31.0",
-		"@commitlint/cli": "^19.8.1",
+		"@commitlint/cli": "^21.1.0",
 		"@commitlint/config-conventional": "^19.8.1",
 		"@trivago/prettier-plugin-sort-imports": "^5.2.2",
 		"@types/jest": "^29.5.14",
