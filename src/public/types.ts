@@ -63,6 +63,8 @@ export interface SailPointPluginSDK {
 	getContext(): Promise<PluginContext>;
 	api: {
 		getToken(forceRefresh?: boolean): Promise<string>;
+		get(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+		post(input: RequestInfo | URL, body?: BodyInit | null, init?: RequestInit): Promise<Response>;
 	};
 	events: {
 		onViewportChange(callback: (dimensions: ViewportUpdatePayload) => void): () => void;

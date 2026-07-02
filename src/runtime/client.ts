@@ -80,6 +80,7 @@ export class InternalSailPointPluginSDK {
 	private readonly protocolVersion: string;
 	private initialized = false;
 	private currentToken: string | null = null;
+	private tokenRefreshInFlight: Promise<string> | null = null;
 	private pluginContext: PluginContext | null = null;
 	private tokenSubscriptionCleanup: (() => void) | null = null;
 
@@ -187,12 +188,27 @@ export class InternalSailPointPluginSDK {
 			return this.currentToken;
 		}
 
-		const payload = await this.engine.sendRequest<Record<string, never>, CurrentTokenResponsePayload>(
-			MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ,
-			{}
-		);
-		this.currentToken = payload.token;
-		return payload.token;
+		return this.refreshCurrentToken();
+	}
+
+	public async get(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+		return this.requestWithAuthorization(input, {
+			...init,
+			method: 'GET'
+		});
+	}
+
+	public async post(input: RequestInfo | URL, body?: BodyInit | null, init?: RequestInit): Promise<Response> {
+		const nextInit: RequestInit = {
+			...init,
+			method: 'POST'
+		};
+
+		if (body !== undefined) {
+			nextInit.body = body;
+		}
+
+		return this.requestWithAuthorization(input, nextInit);
 	}
 
 	public async request<TRequestPayload = unknown, TResponsePayload = unknown>(
@@ -243,6 +259,43 @@ export class InternalSailPointPluginSDK {
 		return {
 			timeoutMs: this.requestTimeoutMs
 		};
+	}
+
+	private async refreshCurrentToken(): Promise<string> {
+		if (this.tokenRefreshInFlight) {
+			return this.tokenRefreshInFlight;
+		}
+
+		this.tokenRefreshInFlight = this.engine
+			.sendRequest<Record<string, never>, CurrentTokenResponsePayload>(MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ, {})
+			.then(payload => {
+				const token = payload?.token;
+				if (typeof token !== 'string' || token.length === 0) {
+					throw new RuntimeEngineError({
+						code: 'HANDSHAKE_FAILED',
+						message: 'Current token response payload must include a non-empty token.'
+					});
+				}
+
+				this.currentToken = token;
+				return token;
+			})
+			.finally(() => {
+				this.tokenRefreshInFlight = null;
+			});
+
+		return this.tokenRefreshInFlight;
+	}
+
+	private async requestWithAuthorization(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+		const token = await this.getToken();
+		const headers = new Headers(init.headers);
+		headers.set('Authorization', `Bearer ${token}`);
+
+		return fetch(input, {
+			...init,
+			headers
+		});
 	}
 
 	private respondWithError(requestId: string, error: unknown): RuntimeEngineError {

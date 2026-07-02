@@ -7,7 +7,10 @@ export const createSDK = (config: SailPointPluginSDKConfig): SailPointPluginSDK 
 	return {
 		getContext: () => internalSDK.getContext(),
 		api: {
-			getToken: (forceRefresh?: boolean) => internalSDK.getToken(forceRefresh)
+			getToken: (forceRefresh?: boolean) => internalSDK.getToken(forceRefresh),
+			get: (input: RequestInfo | URL, init?: RequestInit) => internalSDK.get(input, init),
+			post: (input: RequestInfo | URL, body?: BodyInit | null, init?: RequestInit) =>
+				internalSDK.post(input, body, init)
 		},
 		events: {
 			onViewportChange: callback => internalSDK.onViewportUpdate(callback),

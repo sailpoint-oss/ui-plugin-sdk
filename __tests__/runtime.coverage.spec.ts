@@ -681,6 +681,174 @@ describe('plugin SDK branch coverage', () => {
 		unsubscribeViewport();
 	});
 
+	it('forces token refresh and deduplicates concurrent refresh calls', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		const firstRefresh = sdk.getToken(true);
+		const secondRefresh = sdk.getToken(true);
+		await Promise.resolve();
+
+		const refreshRequests = targetWindow.sentMessages.filter(sent => {
+			const envelope = sent.message as { type?: unknown };
+			return envelope.type === MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ;
+		});
+		expect(refreshRequests).toHaveLength(1);
+
+		const refreshRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ
+		);
+		sourceWindow.emit(
+			makeResponse(MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_RES, refreshRequest.requestId, {
+				token: 'fresh-token'
+			})
+		);
+
+		await expect(Promise.all([firstRefresh, secondRefresh])).resolves.toEqual(['fresh-token', 'fresh-token']);
+		await expect(sdk.getToken()).resolves.toBe('fresh-token');
+	});
+
+	it('uses token update events to refresh the cached token value', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+		const messageCountBeforeUpdate = targetWindow.sentMessages.length;
+
+		sourceWindow.emit({
+			type: MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT,
+			payload: { token: 'rotated-from-event' },
+			protocolVersion: COIP_PROTOCOL_VERSION,
+			timestamp: NOW
+		});
+
+		await expect(sdk.getToken()).resolves.toBe('rotated-from-event');
+		expect(targetWindow.sentMessages.length).toBe(messageCountBeforeUpdate);
+	});
+
+	it('adds bearer token for get/post wrappers and preserves provided headers', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+		const originalFetch = globalThis.fetch;
+		const fetchMock = jest.fn().mockResolvedValue({ ok: true } as Response);
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		try {
+			await completeInitialization(sdk, sourceWindow, targetWindow);
+
+			await sdk.get('https://plugins.sailpoint.test/resource', {
+				headers: {
+					'X-Test': 'get-value'
+				}
+			});
+			await sdk.post(
+				'https://plugins.sailpoint.test/resource',
+				JSON.stringify({
+					name: 'sample'
+				}),
+				{
+					headers: {
+						'Content-Type': 'application/json'
+					}
+				}
+			);
+
+			const getCall = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+			expect(getCall[0]).toBe('https://plugins.sailpoint.test/resource');
+			expect(getCall[1].method).toBe('GET');
+			const getHeaders = new Headers(getCall[1].headers);
+			expect(getHeaders.get('Authorization')).toBe('Bearer cached-token');
+			expect(getHeaders.get('X-Test')).toBe('get-value');
+
+			const postCall = fetchMock.mock.calls[1] as [RequestInfo | URL, RequestInit];
+			expect(postCall[0]).toBe('https://plugins.sailpoint.test/resource');
+			expect(postCall[1].method).toBe('POST');
+			expect(postCall[1].body).toBe('{"name":"sample"}');
+			const postHeaders = new Headers(postCall[1].headers);
+			expect(postHeaders.get('Authorization')).toBe('Bearer cached-token');
+			expect(postHeaders.get('Content-Type')).toBe('application/json');
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	it('does not call fetch when token refresh response is invalid and allows retry', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+		const originalFetch = globalThis.fetch;
+		const fetchMock = jest.fn().mockResolvedValue({ ok: true } as Response);
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		try {
+			await completeInitialization(sdk, sourceWindow, targetWindow);
+
+			sourceWindow.emit({
+				type: MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT,
+				payload: { token: '' },
+				protocolVersion: COIP_PROTOCOL_VERSION,
+				timestamp: NOW
+			});
+
+			const failedRequest = sdk.get('https://plugins.sailpoint.test/failure-case');
+			await Promise.resolve();
+			const invalidRefresh = shiftMessageByType<RuntimeRequestEnvelope>(
+				targetWindow,
+				MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ
+			);
+			sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_RES, invalidRefresh.requestId, {}));
+
+			await expect(failedRequest).rejects.toMatchObject({
+				details: {
+					code: 'HANDSHAKE_FAILED',
+					message: 'Current token response payload must include a non-empty token.'
+				}
+			});
+			expect(fetchMock).not.toHaveBeenCalled();
+
+			const retryRefresh = sdk.getToken(true);
+			await Promise.resolve();
+			const retryRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+				targetWindow,
+				MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ
+			);
+			sourceWindow.emit(
+				makeResponse(MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_RES, retryRequest.requestId, {
+					token: 'recovered-token'
+				})
+			);
+			await expect(retryRefresh).resolves.toBe('recovered-token');
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
 	it('cleans up token subscription on stop and handshake delegates to initialize', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
