@@ -8,9 +8,8 @@ export const createSDK = (config: SailPointPluginSDKConfig): SailPointPluginSDK 
 		getContext: () => internalSDK.getContext(),
 		api: {
 			getToken: (forceRefresh?: boolean) => internalSDK.getToken(forceRefresh),
-			get: (input: RequestInfo | URL, init?: RequestInit) => internalSDK.get(input, init),
-			post: (input: RequestInfo | URL, body?: BodyInit | null, init?: RequestInit) =>
-				internalSDK.post(input, body, init)
+			get: <T>(path: string) => internalSDK.get<T>(path),
+			post: <T>(path: string, data: unknown) => internalSDK.post<T>(path, data)
 		},
 		events: {
 			onViewportChange: callback => internalSDK.onViewportUpdate(callback),

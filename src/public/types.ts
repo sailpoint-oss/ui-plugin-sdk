@@ -53,6 +53,7 @@ export interface SailPointPluginSDKConfig {
 	parentWindow?: MessageTarget;
 	targetWindow?: MessageTarget;
 	sourceWindow?: MessageSource;
+	fetchApi?: typeof fetch;
 	protocolVersion?: string;
 	requestTimeoutMs?: number;
 	maxClockSkewMs?: number;
@@ -63,8 +64,8 @@ export interface SailPointPluginSDK {
 	getContext(): Promise<PluginContext>;
 	api: {
 		getToken(forceRefresh?: boolean): Promise<string>;
-		get(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-		post(input: RequestInfo | URL, body?: BodyInit | null, init?: RequestInit): Promise<Response>;
+		get<T>(path: string): Promise<T>;
+		post<T>(path: string, data: unknown): Promise<T>;
 	};
 	events: {
 		onViewportChange(callback: (dimensions: ViewportUpdatePayload) => void): () => void;
