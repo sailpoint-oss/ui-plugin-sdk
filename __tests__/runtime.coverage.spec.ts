@@ -496,7 +496,8 @@ describe('plugin SDK branch coverage', () => {
 		sdk: InternalSailPointPluginSDK,
 		sourceWindow: FakeSourceWindow,
 		targetWindow: FakeTargetWindow,
-		initialToken = 'cached-token'
+		initialToken = 'cached-token',
+		initPayload?: unknown
 	): Promise<void> => {
 		const initializePromise = sdk.initialize();
 
@@ -515,12 +516,15 @@ describe('plugin SDK branch coverage', () => {
 		await Promise.resolve();
 		shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
 
+		const defaultInitPayload = {
+			tenant: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
+			user: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
+			page: { route: 'https://plugins.sailpoint.test/page' },
+			slot: { id: 'slot-1' }
+		};
 		sourceWindow.emit(
 			makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'init-request', {
-				tenant: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
-				user: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
-				page: { route: 'https://plugins.sailpoint.test/page' },
-				slot: { id: 'slot-1' }
+				...(initPayload ?? defaultInitPayload)
 			})
 		);
 		await Promise.resolve();
@@ -852,6 +856,61 @@ describe('plugin SDK branch coverage', () => {
 		const postHeaders = new Headers(postCall[1].headers);
 		expect(postHeaders.get('Authorization')).toBe('Bearer cached-token');
 		expect(postHeaders.get('Content-Type')).toBe('application/json');
+	});
+
+	it('normalizes renderer context keys and uses tenant apiUrl.idn when provided', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const fetchMock = jest.fn().mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow, 'cached-token', {
+			tenantContext: {
+				id: 'tenant-1',
+				name: 'Acme',
+				pod: 'us-west-2',
+				region: 'us',
+				scriptName: 'acme',
+				org: 'acme',
+				apiUrl: {
+					idn: 'https://acme-fedramp.api.identitynow.com/'
+				},
+				products: []
+			},
+			userContext: {
+				id: 'user-1',
+				displayName: 'Test User',
+				email: 'test@sailpoint.com'
+			},
+			pageContext: {
+				route: 'https://plugins.sailpoint.test/page'
+			},
+			slotContext: {
+				id: 'slot-from-renderer'
+			}
+		});
+
+		await expect(sdk.getContext()).resolves.toMatchObject({
+			tenant: {
+				apiUrl: {
+					idn: 'https://acme-fedramp.api.identitynow.com/'
+				}
+			},
+			slot: {
+				id: 'slot-from-renderer'
+			}
+		});
+
+		await expect(sdk.get<{ ok: boolean }>('/v3/identity')).resolves.toEqual({ ok: true });
+		const getCall = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+		expect(getCall[0]).toBe('https://acme-fedramp.api.identitynow.com/v3/identity');
+		expect(new Headers(getCall[1].headers).get('Authorization')).toBe('Bearer cached-token');
 	});
 
 	it('does not call fetch when token refresh response is invalid and allows retry', async () => {

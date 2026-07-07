@@ -49,25 +49,43 @@ const readToken = (payload: unknown): string => {
 	return token;
 };
 
-const isPluginContext = (payload: unknown): payload is PluginContext => {
+const normalizePluginContext = (payload: unknown): PluginContext | null => {
 	if (!isRecord(payload)) {
-		return false;
+		return null;
 	}
 
-	const context = payload;
-	if (!isRecord(context.tenant) || !isRecord(context.user) || !isRecord(context.page) || !isRecord(context.slot)) {
-		return false;
+	const context = payload as Record<string, unknown>;
+	const tenant = isRecord(context.tenant)
+		? context.tenant
+		: isRecord(context.tenantContext)
+			? context.tenantContext
+			: null;
+	const user = isRecord(context.user) ? context.user : isRecord(context.userContext) ? context.userContext : null;
+	const page = isRecord(context.page) ? context.page : isRecord(context.pageContext) ? context.pageContext : null;
+	const slot = isRecord(context.slot) ? context.slot : isRecord(context.slotContext) ? context.slotContext : {};
+
+	if (!tenant || !user || !page || !isRecord(slot)) {
+		return null;
 	}
 
-	return (
-		hasStringField(context.tenant, 'id') &&
-		hasStringField(context.tenant, 'scriptName') &&
-		hasStringField(context.tenant, 'org') &&
-		hasStringField(context.user, 'id') &&
-		hasStringField(context.user, 'displayName') &&
-		hasStringField(context.user, 'email') &&
-		hasStringField(context.page, 'route')
-	);
+	if (
+		!hasStringField(tenant, 'id') ||
+		!hasStringField(tenant, 'scriptName') ||
+		!hasStringField(tenant, 'org') ||
+		!hasStringField(user, 'id') ||
+		!hasStringField(user, 'displayName') ||
+		!hasStringField(user, 'email') ||
+		!hasStringField(page, 'route')
+	) {
+		return null;
+	}
+
+	return {
+		tenant: tenant as TenantContext,
+		user: user as UserContext,
+		page: page as PageContext,
+		slot: slot as SlotContext
+	};
 };
 
 /**
@@ -163,14 +181,15 @@ export class InternalSailPointPluginSDK {
 
 		const initRequest = await this.engine.waitForRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, this.withTimeout());
 		try {
-			if (!isPluginContext(initRequest.payload)) {
+			const pluginContext = normalizePluginContext(initRequest.payload);
+			if (!pluginContext) {
 				throw new RuntimeEngineError({
 					code: 'HANDSHAKE_FAILED',
 					message: 'Plugin init payload did not match expected context shape.'
 				});
 			}
 
-			this.pluginContext = initRequest.payload;
+			this.pluginContext = pluginContext;
 			this.engine.respond(MESSAGE_TYPES.SP_PLUGIN_INIT_RES, initRequest.requestId, {
 				initialized: true
 			});
@@ -377,6 +396,12 @@ export class InternalSailPointPluginSDK {
 		}
 
 		const tenant = this.pluginContext?.tenant;
+		const apiUrlFromContext = tenant?.apiUrl;
+		if (isRecord(apiUrlFromContext) && hasStringField(apiUrlFromContext, 'idn')) {
+			const baseUrl = apiUrlFromContext.idn.replace(/\/+$/g, '');
+			return `${baseUrl}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
+		}
+
 		const tenantSubdomain =
 			typeof tenant?.org === 'string' && tenant.org.length > 0
 				? tenant.org

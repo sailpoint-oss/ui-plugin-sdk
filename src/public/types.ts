@@ -1,10 +1,19 @@
 import type { MessageSource, MessageTarget } from '../protocol/types';
 
+export interface TenantApiUrl {
+	idn: string;
+	[key: string]: unknown;
+}
+
 export interface TenantContext {
 	id: string;
 	scriptName: string;
 	org: string;
+	name?: string;
 	pod?: string;
+	region?: string;
+	products?: Array<Record<string, unknown>>;
+	apiUrl?: TenantApiUrl;
 	[key: string]: unknown;
 }
 
