@@ -103,10 +103,7 @@ const shiftMessageByType = <TEnvelope extends { type: string }>(
 };
 
 const toBase64Url = (value: string): string => {
-	return btoa(value)
-		.replace(/\+/g, '-')
-		.replace(/\//g, '_')
-		.replace(/=+$/g, '');
+	return btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 };
 
 const createJwtWithExp = (expSeconds: number): string => {

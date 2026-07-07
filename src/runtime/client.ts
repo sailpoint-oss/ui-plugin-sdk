@@ -228,9 +228,13 @@ export class InternalSailPointPluginSDK {
 	}
 
 	public async post<TResponse = unknown>(path: string, data: unknown): Promise<TResponse> {
-		return this.requestJsonWithAuthorization<TResponse>(path, {
-			method: 'POST'
-		}, data);
+		return this.requestJsonWithAuthorization<TResponse>(
+			path,
+			{
+				method: 'POST'
+			},
+			data
+		);
 	}
 
 	public async request<TRequestPayload = unknown, TResponsePayload = unknown>(
