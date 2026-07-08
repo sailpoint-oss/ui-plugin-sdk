@@ -49,25 +49,43 @@ const readToken = (payload: unknown): string => {
 	return token;
 };
 
-const isPluginContext = (payload: unknown): payload is PluginContext => {
+const normalizePluginContext = (payload: unknown): PluginContext | null => {
 	if (!isRecord(payload)) {
-		return false;
+		return null;
 	}
 
-	const context = payload;
-	if (!isRecord(context.tenant) || !isRecord(context.user) || !isRecord(context.page) || !isRecord(context.slot)) {
-		return false;
+	const context = payload as Record<string, unknown>;
+	const tenant = isRecord(context.tenant)
+		? context.tenant
+		: isRecord(context.tenantContext)
+			? context.tenantContext
+			: null;
+	const user = isRecord(context.user) ? context.user : isRecord(context.userContext) ? context.userContext : null;
+	const page = isRecord(context.page) ? context.page : isRecord(context.pageContext) ? context.pageContext : null;
+	const slot = isRecord(context.slot) ? context.slot : isRecord(context.slotContext) ? context.slotContext : {};
+
+	if (!tenant || !user || !page || !isRecord(slot)) {
+		return null;
 	}
 
-	return (
-		hasStringField(context.tenant, 'id') &&
-		hasStringField(context.tenant, 'scriptName') &&
-		hasStringField(context.tenant, 'org') &&
-		hasStringField(context.user, 'id') &&
-		hasStringField(context.user, 'displayName') &&
-		hasStringField(context.user, 'email') &&
-		hasStringField(context.page, 'route')
-	);
+	if (
+		!hasStringField(tenant, 'id') ||
+		!hasStringField(tenant, 'scriptName') ||
+		!hasStringField(tenant, 'org') ||
+		!hasStringField(user, 'id') ||
+		!hasStringField(user, 'displayName') ||
+		!hasStringField(user, 'email') ||
+		!hasStringField(page, 'route')
+	) {
+		return null;
+	}
+
+	return {
+		tenant: tenant as TenantContext,
+		user: user as UserContext,
+		page: page as PageContext,
+		slot: slot as SlotContext
+	};
 };
 
 /**
@@ -78,8 +96,11 @@ export class InternalSailPointPluginSDK {
 	private readonly engine: RuntimeEngine;
 	private readonly requestTimeoutMs?: number;
 	private readonly protocolVersion: string;
+	private readonly now: () => number;
+	private readonly fetchApi?: typeof fetch;
 	private initialized = false;
 	private currentToken: string | null = null;
+	private tokenRefreshInFlight: Promise<string> | null = null;
 	private pluginContext: PluginContext | null = null;
 	private tokenSubscriptionCleanup: (() => void) | null = null;
 
@@ -100,6 +121,8 @@ export class InternalSailPointPluginSDK {
 		});
 		this.requestTimeoutMs = config.requestTimeoutMs;
 		this.protocolVersion = config.protocolVersion ?? COIP_PROTOCOL_VERSION;
+		this.now = config.now ?? (() => Date.now());
+		this.fetchApi = config.fetchApi;
 	}
 
 	public start(): void {
@@ -123,7 +146,14 @@ export class InternalSailPointPluginSDK {
 		this.start();
 		if (!this.tokenSubscriptionCleanup) {
 			this.tokenSubscriptionCleanup = this.onTokenUpdate(payload => {
-				this.currentToken = payload.token;
+				try {
+					this.currentToken = readToken(payload);
+				} catch {
+					/**
+					 * Ignore malformed token update events and keep the previous token.
+					 * Handshake token delivery and explicit refresh paths still enforce strict validation.
+					 */
+				}
 			});
 		}
 
@@ -151,14 +181,15 @@ export class InternalSailPointPluginSDK {
 
 		const initRequest = await this.engine.waitForRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, this.withTimeout());
 		try {
-			if (!isPluginContext(initRequest.payload)) {
+			const pluginContext = normalizePluginContext(initRequest.payload);
+			if (!pluginContext) {
 				throw new RuntimeEngineError({
 					code: 'HANDSHAKE_FAILED',
 					message: 'Plugin init payload did not match expected context shape.'
 				});
 			}
 
-			this.pluginContext = initRequest.payload;
+			this.pluginContext = pluginContext;
 			this.engine.respond(MESSAGE_TYPES.SP_PLUGIN_INIT_RES, initRequest.requestId, {
 				initialized: true
 			});
@@ -183,16 +214,27 @@ export class InternalSailPointPluginSDK {
 
 	public async getToken(forceRefresh = false): Promise<string> {
 		await this.initialize();
-		if (!forceRefresh && this.currentToken) {
+		if (!forceRefresh && this.currentToken && !this.isTokenExpired(this.currentToken)) {
 			return this.currentToken;
 		}
 
-		const payload = await this.engine.sendRequest<Record<string, never>, CurrentTokenResponsePayload>(
-			MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ,
-			{}
+		return this.refreshCurrentToken();
+	}
+
+	public async get<TResponse = unknown>(path: string): Promise<TResponse> {
+		return this.requestJsonWithAuthorization<TResponse>(path, {
+			method: 'GET'
+		});
+	}
+
+	public async post<TResponse = unknown>(path: string, data: unknown): Promise<TResponse> {
+		return this.requestJsonWithAuthorization<TResponse>(
+			path,
+			{
+				method: 'POST'
+			},
+			data
 		);
-		this.currentToken = payload.token;
-		return payload.token;
 	}
 
 	public async request<TRequestPayload = unknown, TResponsePayload = unknown>(
@@ -243,6 +285,180 @@ export class InternalSailPointPluginSDK {
 		return {
 			timeoutMs: this.requestTimeoutMs
 		};
+	}
+
+	private async refreshCurrentToken(): Promise<string> {
+		if (this.tokenRefreshInFlight) {
+			return this.tokenRefreshInFlight;
+		}
+
+		this.tokenRefreshInFlight = this.engine
+			.sendRequest<Record<string, never>, CurrentTokenResponsePayload>(MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ, {})
+			.then(payload => {
+				const token = payload?.token;
+				if (typeof token !== 'string' || token.length === 0) {
+					throw new RuntimeEngineError({
+						code: 'INVALID_SEQUENCE',
+						message: 'Current token response payload must include a non-empty token.'
+					});
+				}
+
+				this.currentToken = token;
+				return token;
+			})
+			.finally(() => {
+				this.tokenRefreshInFlight = null;
+			});
+
+		return this.tokenRefreshInFlight;
+	}
+
+	private async requestJsonWithAuthorization<TResponse>(
+		path: string,
+		init: RequestInit,
+		data?: unknown
+	): Promise<TResponse> {
+		const apiUrl = this.buildApiUrl(path);
+		const requestInit = this.buildRequestInit(init, data);
+		let response = await this.fetchWithAuthorization(apiUrl, requestInit, false);
+
+		/**
+		 * Self-healing path: if the token is stale, force refresh once and retry.
+		 */
+		if (response.status === 401) {
+			response = await this.fetchWithAuthorization(apiUrl, requestInit, true);
+		}
+
+		if (!response.ok) {
+			throw new RuntimeEngineError({
+				code: 'INVALID_SEQUENCE',
+				message: `API request failed with status ${response.status}.`,
+				details: {
+					status: response.status
+				}
+			});
+		}
+
+		if (response.status === 204) {
+			return undefined as TResponse;
+		}
+
+		return (await response.json()) as TResponse;
+	}
+
+	private async fetchWithAuthorization(apiUrl: string, init: RequestInit, forceRefresh: boolean): Promise<Response> {
+		const token = await this.getToken(forceRefresh);
+		const headers = new Headers(init.headers);
+		headers.set('Authorization', `Bearer ${token}`);
+		const fetchImpl = this.fetchApi ?? globalThis.fetch;
+		if (typeof fetchImpl !== 'function') {
+			throw new RuntimeEngineError({
+				code: 'INVALID_SEQUENCE',
+				message: 'Global fetch API is not available in this runtime.'
+			});
+		}
+
+		return fetchImpl(apiUrl, {
+			...init,
+			headers
+		});
+	}
+
+	private buildRequestInit(init: RequestInit, data?: unknown): RequestInit {
+		const nextInit: RequestInit = {
+			...init
+		};
+
+		if (data === undefined) {
+			return nextInit;
+		}
+
+		nextInit.body = JSON.stringify(data);
+		const headers = new Headers(nextInit.headers);
+		if (!headers.has('Content-Type')) {
+			headers.set('Content-Type', 'application/json');
+		}
+		nextInit.headers = headers;
+
+		return nextInit;
+	}
+
+	private buildApiUrl(path: string): string {
+		const normalizedPath = path.trim();
+		if (normalizedPath.length === 0) {
+			throw new RuntimeEngineError({
+				code: 'INVALID_SEQUENCE',
+				message: 'API path must be a non-empty string.'
+			});
+		}
+
+		if (/^https?:\/\//i.test(normalizedPath)) {
+			throw new RuntimeEngineError({
+				code: 'INVALID_SEQUENCE',
+				message: 'api.get/api.post expect a path suffix, not an absolute URL.'
+			});
+		}
+
+		const tenant = this.pluginContext?.tenant;
+		const apiUrlFromContext = tenant?.apiUrl;
+		if (isRecord(apiUrlFromContext) && hasStringField(apiUrlFromContext, 'idn')) {
+			const baseUrl = apiUrlFromContext.idn.replace(/\/+$/g, '');
+			return `${baseUrl}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
+		}
+
+		const tenantSubdomain =
+			typeof tenant?.org === 'string' && tenant.org.length > 0
+				? tenant.org
+				: typeof tenant?.scriptName === 'string' && tenant.scriptName.length > 0
+					? tenant.scriptName
+					: null;
+
+		if (!tenantSubdomain) {
+			throw new RuntimeEngineError({
+				code: 'INVALID_SEQUENCE',
+				message: 'Tenant context is required to construct the default API base URL.'
+			});
+		}
+
+		return `https://${tenantSubdomain}.api.cloud.sailpoint.com${
+			normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`
+		}`;
+	}
+
+	private isTokenExpired(token: string): boolean {
+		const sections = token.split('.');
+		if (sections.length < 2) {
+			return false;
+		}
+
+		const payload = this.parseJwtPayload(sections[1]);
+		if (!payload) {
+			return false;
+		}
+
+		const exp = payload.exp;
+		if (typeof exp !== 'number' || !Number.isFinite(exp)) {
+			return false;
+		}
+
+		return this.now() >= exp * 1000;
+	}
+
+	private parseJwtPayload(base64UrlPayload: string): Record<string, unknown> | null {
+		const normalized = base64UrlPayload.replace(/-/g, '+').replace(/_/g, '/');
+		const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+		const payload = normalized + padding;
+
+		try {
+			if (typeof atob === 'function') {
+				const decoded = atob(payload);
+				return JSON.parse(decoded) as Record<string, unknown>;
+			}
+
+			return null;
+		} catch {
+			return null;
+		}
 	}
 
 	private respondWithError(requestId: string, error: unknown): RuntimeEngineError {

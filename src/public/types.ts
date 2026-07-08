@@ -1,10 +1,19 @@
 import type { MessageSource, MessageTarget } from '../protocol/types';
 
+export interface TenantApiUrl {
+	idn: string;
+	[key: string]: unknown;
+}
+
 export interface TenantContext {
 	id: string;
 	scriptName: string;
 	org: string;
+	name?: string;
 	pod?: string;
+	region?: string;
+	products?: Array<Record<string, unknown>>;
+	apiUrl?: TenantApiUrl;
 	[key: string]: unknown;
 }
 
@@ -53,6 +62,7 @@ export interface SailPointPluginSDKConfig {
 	parentWindow?: MessageTarget;
 	targetWindow?: MessageTarget;
 	sourceWindow?: MessageSource;
+	fetchApi?: typeof fetch;
 	protocolVersion?: string;
 	requestTimeoutMs?: number;
 	maxClockSkewMs?: number;
@@ -63,6 +73,8 @@ export interface SailPointPluginSDK {
 	getContext(): Promise<PluginContext>;
 	api: {
 		getToken(forceRefresh?: boolean): Promise<string>;
+		get<T>(path: string): Promise<T>;
+		post<T>(path: string, data: unknown): Promise<T>;
 	};
 	events: {
 		onViewportChange(callback: (dimensions: ViewportUpdatePayload) => void): () => void;
