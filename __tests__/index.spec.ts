@@ -10,6 +10,7 @@ describe('@sailpoint/ui-plugin-sdk', () => {
 		expect('RuntimeEngine' in sdk).toBe(false);
 		expect('RuntimeHandshake' in sdk).toBe(false);
 		expect('InternalSailPointPluginSDK' in sdk).toBe(false);
+		expect('mockSdkContext' in sdk).toBe(false);
 	});
 
 	it('should not expose initialize on created SDK', () => {

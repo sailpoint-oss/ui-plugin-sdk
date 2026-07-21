@@ -12,6 +12,9 @@ const config: Config = {
 			}
 		]
 	},
+	moduleNameMapper: {
+		'^(\\.{1,2}/.*)\\.js$': '$1'
+	},
 	moduleFileExtensions: ['ts', 'js', 'json'],
 	collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts'],
 	coverageThreshold: {
