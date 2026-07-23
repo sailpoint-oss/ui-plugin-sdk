@@ -82,9 +82,10 @@ export const validateEnvelope = (rawEnvelope: unknown, options: ValidationOption
 
 	const protocolVersion = rawEnvelope.protocolVersion;
 	/**
-	 * Protocol version must be present and exactly match runtime expectations.
+	 * App Shell places the protocol version in the ready-message payload rather
+	 * than on every envelope. When envelope metadata is present, it must match.
 	 */
-	if (typeof protocolVersion !== 'string') {
+	if (protocolVersion !== undefined && typeof protocolVersion !== 'string') {
 		return {
 			ok: false,
 			error: createError('INVALID_PROTOCOL_VERSION', 'Envelope protocolVersion must be a string.'),
@@ -92,7 +93,7 @@ export const validateEnvelope = (rawEnvelope: unknown, options: ValidationOption
 		};
 	}
 
-	if (protocolVersion !== options.expectedProtocolVersion) {
+	if (typeof protocolVersion === 'string' && protocolVersion !== options.expectedProtocolVersion) {
 		return {
 			ok: false,
 			error: createError('INVALID_PROTOCOL_VERSION', 'Unsupported protocol version.', {
@@ -107,16 +108,17 @@ export const validateEnvelope = (rawEnvelope: unknown, options: ValidationOption
 	/**
 	 * Timestamp guards against stale/future envelopes outside the allowed skew window.
 	 */
-	if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+	if (typeof timestamp !== 'string' || !Number.isFinite(Date.parse(timestamp))) {
 		return {
 			ok: false,
-			error: createError('INVALID_TIMESTAMP', 'Envelope timestamp must be a finite number.'),
+			error: createError('INVALID_TIMESTAMP', 'Envelope timestamp must be a valid ISO-8601 string.'),
 			requestId: typeof rawEnvelope.requestId === 'string' ? rawEnvelope.requestId : undefined
 		};
 	}
 
 	const now = options.now();
-	if (Math.abs(now - timestamp) > options.maxClockSkewMs) {
+	const timestampMs = Date.parse(timestamp);
+	if (Math.abs(now - timestampMs) > options.maxClockSkewMs) {
 		return {
 			ok: false,
 			error: createError('INVALID_TIMESTAMP', 'Envelope timestamp is outside the allowed skew.', {

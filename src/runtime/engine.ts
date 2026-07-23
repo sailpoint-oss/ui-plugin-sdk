@@ -126,7 +126,7 @@ export class RuntimeEngine {
 			type,
 			requestId,
 			protocolVersion: this.protocolVersion,
-			timestamp: this.now(),
+			timestamp: new Date(this.now()).toISOString(),
 			payload
 		};
 
@@ -169,7 +169,7 @@ export class RuntimeEngine {
 			type: responseType,
 			requestId,
 			protocolVersion: this.protocolVersion,
-			timestamp: this.now(),
+			timestamp: new Date(this.now()).toISOString(),
 			payload
 		};
 
@@ -183,7 +183,7 @@ export class RuntimeEngine {
 		const envelope: RuntimeEventEnvelope = {
 			type: eventType,
 			protocolVersion: this.protocolVersion,
-			timestamp: this.now(),
+			timestamp: new Date(this.now()).toISOString(),
 			payload
 		};
 
@@ -368,7 +368,15 @@ export class RuntimeEngine {
 	 * Resolves/rejects pending request promises based on inbound response envelopes.
 	 */
 	private handleResponse(responseEnvelope: RuntimeResponseEnvelope): void {
-		const pendingRequest = this.pendingRequests.get(responseEnvelope.requestId);
+		const errorPayload =
+			responseEnvelope.type === MESSAGE_TYPES.SP_ERROR_RES
+				? (responseEnvelope.payload as ErrorResponsePayload)
+				: undefined;
+		const correlatedRequestId =
+			errorPayload && typeof errorPayload.requestId === 'string'
+				? errorPayload.requestId
+				: responseEnvelope.requestId;
+		const pendingRequest = this.pendingRequests.get(correlatedRequestId);
 		if (!pendingRequest) {
 			if (responseEnvelope.type !== MESSAGE_TYPES.SP_ERROR_RES) {
 				this.sendError(
@@ -386,21 +394,28 @@ export class RuntimeEngine {
 		}
 
 		clearTimeout(pendingRequest.timeoutHandle);
-		this.pendingRequests.delete(responseEnvelope.requestId);
+		this.pendingRequests.delete(correlatedRequestId);
 
 		if (responseEnvelope.type === MESSAGE_TYPES.SP_ERROR_RES) {
 			/**
 			 * Host can explicitly fail a pending request through SP_ERROR_RES.
 			 */
-			const payload = responseEnvelope.payload as ErrorResponsePayload;
-			pendingRequest.reject(
-				new RuntimeEngineError(
-					payload?.error ?? {
-						code: 'HANDSHAKE_FAILED',
-						message: 'Received SP_ERROR_RES without an error payload.'
-					}
-				)
-			);
+			const hostErrorCode = errorPayload?.type;
+			const errorDetails =
+				errorPayload?.error ??
+				(typeof hostErrorCode === 'string'
+					? {
+							code: 'HANDSHAKE_FAILED' as const,
+							message: errorPayload?.message ?? `App Shell rejected request with ${hostErrorCode}.`,
+							details: {
+								hostErrorCode
+							}
+						}
+					: {
+							code: 'HANDSHAKE_FAILED' as const,
+							message: 'Received SP_ERROR_RES without an error payload.'
+						});
+			pendingRequest.reject(new RuntimeEngineError(errorDetails));
 			return;
 		}
 
@@ -453,7 +468,7 @@ export class RuntimeEngine {
 			type: MESSAGE_TYPES.SP_ERROR_RES,
 			requestId: requestId ?? createRequestId(),
 			protocolVersion: this.protocolVersion,
-			timestamp: this.now(),
+			timestamp: new Date(this.now()).toISOString(),
 			payload: {
 				error: errorDetails
 			}

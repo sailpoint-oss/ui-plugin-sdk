@@ -78,6 +78,7 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 	const targetOrigin = options.targetOrigin ?? DEFAULT_TARGET_ORIGIN;
 	const protocolVersion = options.protocolVersion ?? COIP_PROTOCOL_VERSION;
 	const now = options.now ?? (() => Date.now());
+	const timestamp = (): string => new Date(now()).toISOString();
 	const context = options.context ?? DEFAULT_CONTEXT;
 	const messages: MockOutboundMessage[] = [];
 	const originalPostMessage = parentWindow.postMessage;
@@ -103,8 +104,7 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 		dispatchIncoming({
 			type,
 			requestId: nextRequestId(),
-			protocolVersion,
-			timestamp: now(),
+			timestamp: timestamp(),
 			payload
 		});
 	};
@@ -113,8 +113,7 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 		dispatchIncoming({
 			type,
 			requestId,
-			protocolVersion,
-			timestamp: now(),
+			timestamp: timestamp(),
 			payload
 		});
 	};
@@ -142,11 +141,14 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 			case MESSAGE_TYPES.SP_PLUGIN_READY_REQ:
 				enqueue(() => {
 					dispatchResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, message.requestId, {
-						ready: true
+						protocolVersion
 					});
 					enqueue(() => {
 						dispatchRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, {
-							token: currentToken
+							token: {
+								accessToken: currentToken,
+								refreshInterval: 300
+							}
 						});
 					});
 				});
@@ -159,7 +161,10 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 			case MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ:
 				enqueue(() => {
 					dispatchResponse(MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_RES, message.requestId, {
-						token: currentToken
+						token: {
+							accessToken: currentToken,
+							refreshInterval: 300
+						}
 					});
 				});
 				break;
@@ -178,18 +183,19 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 			currentToken = token;
 			dispatchIncoming({
 				type: MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT,
-				protocolVersion,
-				timestamp: now(),
+				timestamp: timestamp(),
 				payload: {
-					token
+					token: {
+						accessToken: token,
+						refreshInterval: 300
+					}
 				}
 			});
 		},
 		emitViewportChange(dimensions: ViewportUpdatePayload): void {
 			dispatchIncoming({
 				type: MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT,
-				protocolVersion,
-				timestamp: now(),
+				timestamp: timestamp(),
 				payload: dimensions
 			});
 		},

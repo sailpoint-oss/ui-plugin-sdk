@@ -13,8 +13,13 @@ import type {
 import { RuntimeEngine, RuntimeEngineError } from './engine';
 import { isRecord } from './engine.utils';
 
+interface CoipTokenData {
+	accessToken: string;
+	refreshInterval?: number;
+}
+
 interface CurrentTokenResponsePayload {
-	token: string;
+	token: string | CoipTokenData;
 }
 type InternalSailPointPluginSDKConfig = SailPointPluginSDKConfig;
 
@@ -30,6 +35,18 @@ const hasStringField = (value: Record<string, unknown>, field: string): boolean 
 	return typeof value[field] === 'string';
 };
 
+const readTokenValue = (value: unknown): string | null => {
+	if (typeof value === 'string' && value.length > 0) {
+		return value;
+	}
+
+	if (isRecord(value) && typeof value.accessToken === 'string' && value.accessToken.length > 0) {
+		return value.accessToken;
+	}
+
+	return null;
+};
+
 const readToken = (payload: unknown): string => {
 	if (typeof payload !== 'object' || payload === null) {
 		throw new RuntimeEngineError({
@@ -38,11 +55,11 @@ const readToken = (payload: unknown): string => {
 		});
 	}
 
-	const token = (payload as { token?: unknown }).token;
-	if (typeof token !== 'string' || token.length === 0) {
+	const token = readTokenValue((payload as { token?: unknown }).token);
+	if (!token) {
 		throw new RuntimeEngineError({
 			code: 'HANDSHAKE_FAILED',
-			message: 'Auth token delivery payload must include a non-empty token.'
+			message: 'Auth token delivery payload must include a non-empty token or accessToken.'
 		});
 	}
 
@@ -258,7 +275,17 @@ export class InternalSailPointPluginSDK {
 	}
 
 	public onTokenUpdate(handler: (payload: TokenUpdatePayload) => void): () => void {
-		return this.onEvent(MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT, handler);
+		return this.onEvent<unknown>(MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT, payload => {
+			try {
+				handler({
+					token: readToken(payload)
+				});
+			} catch {
+				/**
+				 * Ignore malformed token-update events and retain the last valid token.
+				 */
+			}
+		});
 	}
 
 	public onViewportUpdate(handler: (payload: ViewportUpdatePayload) => void): () => void {
@@ -295,11 +322,11 @@ export class InternalSailPointPluginSDK {
 		this.tokenRefreshInFlight = this.engine
 			.sendRequest<Record<string, never>, CurrentTokenResponsePayload>(MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ, {})
 			.then(payload => {
-				const token = payload?.token;
-				if (typeof token !== 'string' || token.length === 0) {
+				const token = readTokenValue(payload?.token);
+				if (!token) {
 					throw new RuntimeEngineError({
 						code: 'INVALID_SEQUENCE',
-						message: 'Current token response payload must include a non-empty token.'
+						message: 'Current token response payload must include a non-empty token or accessToken.'
 					});
 				}
 
