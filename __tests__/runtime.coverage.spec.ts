@@ -16,6 +16,7 @@ import { isEventType, isRequestType, isResponseType, validateEnvelope, validateO
  */
 const TRUSTED_ORIGIN = 'https://plugins.sailpoint.test';
 const NOW = 1_717_600_000_000;
+const NOW_ISO = new Date(NOW).toISOString();
 
 class FakeSourceWindow implements MessageSource {
 	private readonly listeners = new Set<(event: RuntimeMessageEvent) => void>();
@@ -51,7 +52,7 @@ const makeRequest = (
 	type: RuntimeRequestEnvelope['type'],
 	requestId: string,
 	payload: unknown,
-	timestamp: number = NOW
+	timestamp: string = NOW_ISO
 ): RuntimeRequestEnvelope => ({
 	type,
 	requestId,
@@ -64,7 +65,7 @@ const makeResponse = (
 	type: RuntimeResponseEnvelope['type'],
 	requestId: string,
 	payload: unknown,
-	timestamp: number = NOW
+	timestamp: string = NOW_ISO
 ): RuntimeResponseEnvelope => ({
 	type,
 	requestId,
@@ -145,7 +146,7 @@ describe('validator branches', () => {
 			validateEnvelope(
 				{
 					protocolVersion: COIP_PROTOCOL_VERSION,
-					timestamp: NOW,
+					timestamp: NOW_ISO,
 					payload: {}
 				},
 				options
@@ -159,14 +160,14 @@ describe('validator branches', () => {
 			validateEnvelope(
 				{
 					type: MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
-					timestamp: NOW,
+					timestamp: NOW_ISO,
 					payload: {}
 				},
 				options
 			)
 		).toMatchObject({
 			ok: false,
-			error: { code: 'INVALID_PROTOCOL_VERSION' }
+			error: { code: 'INVALID_REQUEST_ID' }
 		});
 
 		expect(
@@ -174,7 +175,7 @@ describe('validator branches', () => {
 				{
 					type: MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 					protocolVersion: '0.0.1',
-					timestamp: NOW,
+					timestamp: NOW_ISO,
 					payload: {},
 					requestId: 'req-1'
 				},
@@ -206,7 +207,7 @@ describe('validator branches', () => {
 				{
 					type: MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 					protocolVersion: COIP_PROTOCOL_VERSION,
-					timestamp: NOW - 10_000,
+					timestamp: new Date(NOW - 10_000).toISOString(),
 					payload: {},
 					requestId: 'req-1'
 				},
@@ -222,7 +223,7 @@ describe('validator branches', () => {
 				{
 					type: MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 					protocolVersion: COIP_PROTOCOL_VERSION,
-					timestamp: NOW,
+					timestamp: NOW_ISO,
 					requestId: 'req-1'
 				},
 				options
@@ -237,7 +238,7 @@ describe('validator branches', () => {
 				{
 					type: MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 					protocolVersion: COIP_PROTOCOL_VERSION,
-					timestamp: NOW,
+					timestamp: NOW_ISO,
 					payload: {}
 				},
 				options
@@ -252,7 +253,7 @@ describe('validator branches', () => {
 				{
 					type: 'SP_UNKNOWN',
 					protocolVersion: COIP_PROTOCOL_VERSION,
-					timestamp: NOW,
+					timestamp: NOW_ISO,
 					payload: {}
 				},
 				options
@@ -267,7 +268,7 @@ describe('validator branches', () => {
 				{
 					type: MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 					protocolVersion: COIP_PROTOCOL_VERSION,
-					timestamp: NOW,
+					timestamp: NOW_ISO,
 					payload: {},
 					requestId: 'req-1'
 				},
@@ -402,11 +403,25 @@ describe('engine and client branch coverage', () => {
 			targetWindow,
 			MESSAGE_TYPES.SP_PLUGIN_INIT_REQ
 		);
-		sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_ERROR_RES, outboundForError.requestId, {}));
+		sourceWindow.emit({
+			type: MESSAGE_TYPES.SP_ERROR_RES,
+			requestId: 'app-shell-error-id',
+			timestamp: NOW_ISO,
+			payload: {
+				type: 'ERR_UNSUPPORTED_VERSION',
+				requestId: outboundForError.requestId
+			}
+		});
 
 		await expect(pendingError).rejects.toBeInstanceOf(RuntimeEngineError);
 		await expect(pendingError).rejects.toMatchObject({
-			details: { code: 'HANDSHAKE_FAILED' }
+			details: {
+				code: 'HANDSHAKE_FAILED',
+				message: 'App Shell rejected request with ERR_UNSUPPORTED_VERSION.',
+				details: {
+					hostErrorCode: 'ERR_UNSUPPORTED_VERSION'
+				}
+			}
 		});
 	});
 
@@ -598,7 +613,7 @@ describe('plugin SDK branch coverage', () => {
 		await expect(initializePromise).rejects.toMatchObject({
 			details: {
 				code: 'HANDSHAKE_FAILED',
-				message: 'Auth token delivery payload must include a non-empty token.'
+				message: 'Auth token delivery payload must include a non-empty token or accessToken.'
 			}
 		});
 		const errorResponse = shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_ERROR_RES);
@@ -606,7 +621,7 @@ describe('plugin SDK branch coverage', () => {
 		expect(errorResponse.payload).toMatchObject({
 			error: {
 				code: 'HANDSHAKE_FAILED',
-				message: 'Auth token delivery payload must include a non-empty token.'
+				message: 'Auth token delivery payload must include a non-empty token or accessToken.'
 			}
 		});
 	});
@@ -698,7 +713,7 @@ describe('plugin SDK branch coverage', () => {
 			type: MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT,
 			payload: { width: 900, height: 700 },
 			protocolVersion: COIP_PROTOCOL_VERSION,
-			timestamp: NOW
+			timestamp: NOW_ISO
 		});
 		expect(onViewportChange).toHaveBeenCalledWith({ width: 900, height: 700 });
 		unsubscribeViewport();
@@ -785,7 +800,7 @@ describe('plugin SDK branch coverage', () => {
 			type: MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT,
 			payload: { token: 'rotated-from-event' },
 			protocolVersion: COIP_PROTOCOL_VERSION,
-			timestamp: NOW
+			timestamp: NOW_ISO
 		});
 
 		await expect(sdk.getToken()).resolves.toBe('rotated-from-event');
@@ -809,7 +824,7 @@ describe('plugin SDK branch coverage', () => {
 			type: MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT,
 			payload: { token: '' },
 			protocolVersion: COIP_PROTOCOL_VERSION,
-			timestamp: NOW
+			timestamp: NOW_ISO
 		});
 
 		await expect(sdk.getToken()).resolves.toBe('cached-token');
@@ -941,7 +956,7 @@ describe('plugin SDK branch coverage', () => {
 		await expect(failedRequest).rejects.toMatchObject({
 			details: {
 				code: 'INVALID_SEQUENCE',
-				message: 'Current token response payload must include a non-empty token.'
+				message: 'Current token response payload must include a non-empty token or accessToken.'
 			}
 		});
 		expect(fetchMock).not.toHaveBeenCalled();

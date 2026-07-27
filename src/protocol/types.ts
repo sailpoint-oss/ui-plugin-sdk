@@ -29,8 +29,8 @@ export interface RuntimeErrorDetails {
  */
 export interface EnvelopeBase<TType extends MessageType, TPayload> {
 	type: TType;
-	protocolVersion: string;
-	timestamp: number;
+	protocolVersion?: string;
+	timestamp: string;
 	payload: TPayload;
 }
 
@@ -48,7 +48,10 @@ export interface ResponseEnvelope<TPayload = unknown> extends EnvelopeBase<Respo
 export type EventEnvelope<TPayload = unknown> = EnvelopeBase<EventMessageType, TPayload>;
 
 export interface ErrorResponsePayload {
-	error: RuntimeErrorDetails;
+	error?: RuntimeErrorDetails;
+	type?: string;
+	message?: string;
+	requestId?: string;
 }
 
 export type RuntimeEnvelope = RequestEnvelope | ResponseEnvelope | EventEnvelope;

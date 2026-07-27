@@ -15,6 +15,7 @@ import { RuntimeEngine, RuntimeEngineError } from '../src/runtime/engine';
 const TRUSTED_ORIGIN = 'https://plugins.sailpoint.test';
 const UNTRUSTED_ORIGIN = 'https://evil.example';
 const NOW = 1_717_600_000_000;
+const NOW_ISO = new Date(NOW).toISOString();
 
 class FakeSourceWindow implements MessageSource {
 	private readonly listeners = new Set<(event: RuntimeMessageEvent) => void>();
@@ -57,7 +58,7 @@ const makeRequest = (
 	type: RuntimeRequestEnvelope['type'],
 	requestId: string,
 	payload: unknown,
-	timestamp: number = NOW
+	timestamp: string = NOW_ISO
 ): RuntimeRequestEnvelope => ({
 	type,
 	requestId,
@@ -70,7 +71,7 @@ const makeResponse = (
 	type: RuntimeResponseEnvelope['type'],
 	requestId: string,
 	payload: unknown,
-	timestamp: number = NOW
+	timestamp: string = NOW_ISO
 ): RuntimeResponseEnvelope => ({
 	type,
 	requestId,
@@ -151,7 +152,7 @@ describe('RuntimeEngine', () => {
 			type: MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT,
 			payload: { width: 1200, height: 800 },
 			protocolVersion: COIP_PROTOCOL_VERSION,
-			timestamp: NOW
+			timestamp: NOW_ISO
 		});
 		expect(received).toEqual([{ width: 1200, height: 800 }]);
 
@@ -160,7 +161,7 @@ describe('RuntimeEngine', () => {
 			type: MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT,
 			payload: { width: 1440, height: 900 },
 			protocolVersion: COIP_PROTOCOL_VERSION,
-			timestamp: NOW
+			timestamp: NOW_ISO
 		});
 		expect(received).toHaveLength(1);
 	});
@@ -218,7 +219,7 @@ describe('RuntimeEngine', () => {
 			type: MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 			requestId: 'req-malformed',
 			protocolVersion: COIP_PROTOCOL_VERSION,
-			timestamp: NOW
+			timestamp: NOW_ISO
 		});
 
 		const malformedError = findAndRemoveMessageByType<RuntimeResponseEnvelope>(
@@ -307,18 +308,28 @@ describe('PluginRuntimeClient', () => {
 			MESSAGE_TYPES.SP_PLUGIN_READY_REQ
 		);
 		expect(readyRequest.payload).toEqual({ protocolVersion: COIP_PROTOCOL_VERSION });
-		sourceWindow.emit(
-			makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, {
-				ready: true
-			})
-		);
+		expect(readyRequest.timestamp).toBe(NOW_ISO);
+		sourceWindow.emit({
+			type: MESSAGE_TYPES.SP_PLUGIN_READY_RES,
+			requestId: readyRequest.requestId,
+			timestamp: NOW_ISO,
+			payload: {
+				protocolVersion: COIP_PROTOCOL_VERSION
+			}
+		});
 		await Promise.resolve();
 
-		sourceWindow.emit(
-			makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-delivery-1', {
-				token: 'jwt-token'
-			})
-		);
+		sourceWindow.emit({
+			type: MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ,
+			requestId: 'token-delivery-1',
+			timestamp: NOW_ISO,
+			payload: {
+				token: {
+					accessToken: 'jwt-token',
+					refreshInterval: 300
+				}
+			}
+		});
 		await Promise.resolve();
 		const tokenDeliveryResponse = findAndRemoveMessageByType<RuntimeResponseEnvelope>(
 			targetWindow,
@@ -326,14 +337,20 @@ describe('PluginRuntimeClient', () => {
 		);
 		expect(tokenDeliveryResponse.requestId).toBe('token-delivery-1');
 
-		const contextPayload = {
-			tenant: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
-			user: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
-			page: { route: 'https://plugins.sailpoint.test/page' },
-			slot: { id: 'slot-1' }
+		const appShellContextPayload = {
+			pluginConfiguration: { pluginId: 'plugin-1' },
+			tenantContext: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
+			userContext: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
+			pageContext: { route: 'https://plugins.sailpoint.test/page' },
+			slotContext: { id: 'slot-1' }
 		};
 
-		sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'plugin-init-1', contextPayload));
+		sourceWindow.emit({
+			type: MESSAGE_TYPES.SP_PLUGIN_INIT_REQ,
+			requestId: 'plugin-init-1',
+			timestamp: NOW_ISO,
+			payload: appShellContextPayload
+		});
 		await Promise.resolve();
 		const initResponse = findAndRemoveMessageByType<RuntimeResponseEnvelope>(
 			targetWindow,
@@ -342,7 +359,12 @@ describe('PluginRuntimeClient', () => {
 		expect(initResponse.requestId).toBe('plugin-init-1');
 
 		await expect(initializePromise).resolves.toBeUndefined();
-		await expect(client.getContext()).resolves.toEqual(contextPayload);
+		await expect(client.getContext()).resolves.toEqual({
+			tenant: appShellContextPayload.tenantContext,
+			user: appShellContextPayload.userContext,
+			page: appShellContextPayload.pageContext,
+			slot: appShellContextPayload.slotContext
+		});
 	});
 
 	it('supports post-handshake token and viewport APIs', async () => {
@@ -390,11 +412,17 @@ describe('PluginRuntimeClient', () => {
 			MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ
 		);
 
-		sourceWindow.emit(
-			makeResponse(MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_RES, tokenRequest.requestId, {
-				token: 'refreshed-token'
-			})
-		);
+		sourceWindow.emit({
+			type: MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_RES,
+			requestId: tokenRequest.requestId,
+			timestamp: NOW_ISO,
+			payload: {
+				token: {
+					accessToken: 'refreshed-token',
+					refreshInterval: 300
+				}
+			}
+		});
 		await expect(currentTokenPromise).resolves.toBe('refreshed-token');
 
 		const onTokenUpdate = jest.fn();
@@ -406,15 +434,19 @@ describe('PluginRuntimeClient', () => {
 
 		sourceWindow.emit({
 			type: MESSAGE_TYPES.SP_TOKEN_UPDATE_EVT,
-			payload: { token: 'rotated-token' },
-			protocolVersion: COIP_PROTOCOL_VERSION,
-			timestamp: NOW
+			payload: {
+				token: {
+					accessToken: 'rotated-token',
+					refreshInterval: 300
+				}
+			},
+			timestamp: NOW_ISO
 		});
 		sourceWindow.emit({
 			type: MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT,
 			payload: { width: 800, height: 600 },
 			protocolVersion: COIP_PROTOCOL_VERSION,
-			timestamp: NOW
+			timestamp: NOW_ISO
 		});
 
 		expect(onTokenUpdate).toHaveBeenCalledWith({ token: 'rotated-token' });

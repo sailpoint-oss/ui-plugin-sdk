@@ -4,6 +4,7 @@ import type { PluginContext } from '../src/public/types';
 import { mockSdkContext } from '../src/testing';
 
 const NOW = 1_717_600_000_000;
+const NOW_ISO = new Date(NOW).toISOString();
 const CONTEXT: PluginContext = {
 	tenant: {
 		id: 'tenant-1',
@@ -102,7 +103,7 @@ describe('mockSdkContext', () => {
 					type: MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 					requestId: 'wrong-origin',
 					protocolVersion: 'v1.0',
-					timestamp: NOW,
+					timestamp: NOW_ISO,
 					payload: {}
 				},
 				'https://unexpected.example'
