@@ -1,8 +1,12 @@
 import { InternalSailPointPluginSDK } from '../runtime/client';
+import { resolveTargetOrigin } from '../runtime/target-origin';
 import type { SailPointPluginSDK, SailPointPluginSDKConfig } from './types';
 
-export const createSDK = (config: SailPointPluginSDKConfig): SailPointPluginSDK => {
-	const internalSDK = new InternalSailPointPluginSDK(config);
+export const createSDK = (config: SailPointPluginSDKConfig = {}): SailPointPluginSDK => {
+	const internalSDK = new InternalSailPointPluginSDK({
+		...config,
+		targetOrigin: resolveTargetOrigin(config.targetOrigin)
+	});
 
 	return {
 		getContext: () => internalSDK.getContext(),

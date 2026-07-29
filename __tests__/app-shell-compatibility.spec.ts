@@ -95,6 +95,7 @@ describe('saas-sp-renderer contract compatibility', () => {
 	it('completes the full handshake with exact App Shell envelope and token shapes', async () => {
 		const sourceWindow = new ContractSourceWindow();
 		const appShell = new ContractAppShell();
+		window.history.replaceState({}, '', `/?parentOrigin=${encodeURIComponent(APP_SHELL_ORIGIN)}`);
 		const contextPayload = {
 			pluginConfiguration: {
 				pluginId: 'plugin-1',
@@ -174,7 +175,6 @@ describe('saas-sp-renderer contract compatibility', () => {
 		};
 
 		const sdk = createSDK({
-			targetOrigin: APP_SHELL_ORIGIN,
 			parentWindow: appShell,
 			sourceWindow,
 			now: () => NOW,

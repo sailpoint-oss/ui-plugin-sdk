@@ -21,7 +21,9 @@ interface CoipTokenData {
 interface CurrentTokenResponsePayload {
 	token: string | CoipTokenData;
 }
-type InternalSailPointPluginSDKConfig = SailPointPluginSDKConfig;
+type InternalSailPointPluginSDKConfig = SailPointPluginSDKConfig & {
+	targetOrigin: string;
+};
 
 const defaultParentWindow = (): MessageTarget => {
 	if (typeof window === 'undefined' || !window.parent) {
