@@ -18,6 +18,45 @@ const TRUSTED_ORIGIN = 'https://plugins.sailpoint.test';
 const NOW = 1_717_600_000_000;
 const NOW_ISO = new Date(NOW).toISOString();
 
+/**
+ * Exhaustive capability map, as App Shell always sends it.
+ */
+const CAPABILITIES = {
+	isOrgAdmin: true,
+	isHelpdesk: false,
+	isDashboard: false,
+	isCertAdmin: false,
+	isReportAdmin: false,
+	isSourceAdmin: false,
+	isSourceSubadmin: false,
+	isRoleAdmin: false,
+	isRoleSubadmin: false,
+	isCloudGovAdmin: false,
+	isCloudGovUser: false,
+	isSaasManagementAdmin: false,
+	isSaasManagementReader: false
+};
+
+const TENANT_FIXTURE = {
+	id: 'tenant-1',
+	scriptName: 'acme',
+	org: 'acme',
+	name: 'Acme',
+	pod: 'useast1',
+	region: 'us-east-1',
+	apiUrl: {
+		idn: 'https://acme.api.identitynow.com'
+	},
+	products: []
+};
+
+const USER_FIXTURE = {
+	id: 'user-1',
+	displayName: 'Test User',
+	email: 'test@sailpoint.com',
+	capabilities: CAPABILITIES
+};
+
 class FakeSourceWindow implements MessageSource {
 	private readonly listeners = new Set<(event: RuntimeMessageEvent) => void>();
 
@@ -529,8 +568,9 @@ describe('plugin SDK branch coverage', () => {
 		shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
 
 		const defaultInitPayload = {
-			tenant: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
-			user: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
+			pluginConfiguration: { pluginId: 'plugin-1' },
+			tenant: TENANT_FIXTURE,
+			user: USER_FIXTURE,
 			page: { route: 'https://plugins.sailpoint.test/page' },
 			slot: { id: 'slot-1' }
 		};
@@ -626,6 +666,173 @@ describe('plugin SDK branch coverage', () => {
 		});
 	});
 
+	/**
+	 * One case per field the post-PLTUI-16110 contract made required.
+	 *
+	 * Each mutates the otherwise-valid App Shell payload in exactly one way, so a
+	 * passing case proves that specific validation branch rejects rather than that
+	 * the payload is broken generally.
+	 */
+	describe('strict init payload validation', () => {
+		const validPayload = (): Record<string, unknown> => ({
+			pluginConfiguration: { pluginId: 'plugin-1' },
+			tenantContext: { ...TENANT_FIXTURE },
+			userContext: { ...USER_FIXTURE },
+			pageContext: { route: 'https://plugins.sailpoint.test/page' },
+			slotContext: {}
+		});
+
+		const withoutTenantField = (field: string): Record<string, unknown> => {
+			const payload = validPayload();
+			const tenant = { ...(payload.tenantContext as Record<string, unknown>) };
+			delete tenant[field];
+			payload.tenantContext = tenant;
+			return payload;
+		};
+
+		const withCapabilities = (capabilities: unknown): Record<string, unknown> => {
+			const payload = validPayload();
+			payload.userContext = { ...USER_FIXTURE, capabilities };
+			return payload;
+		};
+
+		const partialCapabilities = (): Record<string, unknown> => {
+			const capabilities: Record<string, unknown> = { ...CAPABILITIES };
+			delete capabilities.isCloudGovUser;
+			return capabilities;
+		};
+
+		const rejectionCases: Array<[string, Record<string, unknown>]> = [
+			['capabilities omitted entirely', withCapabilities(undefined)],
+			['capabilities sent as the legacy string array', withCapabilities(['ORG_ADMIN'])],
+			['capabilities missing one flag', withCapabilities(partialCapabilities())],
+			['capabilities carrying a non-boolean flag', withCapabilities({ ...CAPABILITIES, isOrgAdmin: 'true' })],
+			['tenant name missing', withoutTenantField('name')],
+			['tenant pod missing', withoutTenantField('pod')],
+			['tenant region missing', withoutTenantField('region')],
+			['tenant apiUrl missing', withoutTenantField('apiUrl')],
+			['tenant products missing', withoutTenantField('products')]
+		];
+
+		it.each(rejectionCases)('fails the handshake when %s', async (_label, payload) => {
+			const sourceWindow = new FakeSourceWindow();
+			const targetWindow = new FakeTargetWindow();
+			const sdk = new InternalSailPointPluginSDK({
+				sourceWindow,
+				targetWindow,
+				targetOrigin: TRUSTED_ORIGIN,
+				now: () => NOW
+			});
+
+			const initializePromise = sdk.initialize();
+			const readyRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+				targetWindow,
+				MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+			);
+			sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+			await Promise.resolve();
+			sourceWindow.emit(
+				makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-valid', {
+					token: 'jwt-token'
+				})
+			);
+			await Promise.resolve();
+			shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
+
+			sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'init-strict', payload));
+			await expect(initializePromise).rejects.toMatchObject({
+				details: {
+					code: 'HANDSHAKE_FAILED',
+					message: 'Plugin init payload did not match expected context shape.'
+				}
+			});
+
+			/**
+			 * The rejection must be reported back to App Shell against the
+			 * originating requestId, not just thrown locally.
+			 */
+			const errorResponse = shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_ERROR_RES);
+			expect(errorResponse.requestId).toBe('init-strict');
+			expect(errorResponse.payload).toMatchObject({
+				error: {
+					code: 'HANDSHAKE_FAILED'
+				}
+			});
+		});
+
+		it('fails the handshake when tenant apiUrl carries no idn string', async () => {
+			const payload = validPayload();
+			payload.tenantContext = { ...TENANT_FIXTURE, apiUrl: { idn: 42 } };
+
+			const sourceWindow = new FakeSourceWindow();
+			const targetWindow = new FakeTargetWindow();
+			const sdk = new InternalSailPointPluginSDK({
+				sourceWindow,
+				targetWindow,
+				targetOrigin: TRUSTED_ORIGIN,
+				now: () => NOW
+			});
+
+			const initializePromise = sdk.initialize();
+			const readyRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+				targetWindow,
+				MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+			);
+			sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+			await Promise.resolve();
+			sourceWindow.emit(
+				makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-valid', {
+					token: 'jwt-token'
+				})
+			);
+			await Promise.resolve();
+			shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
+
+			sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'init-apiurl', payload));
+			await expect(initializePromise).rejects.toMatchObject({
+				details: {
+					code: 'HANDSHAKE_FAILED'
+				}
+			});
+		});
+
+		it('fails the handshake when pluginConfiguration is absent', async () => {
+			const payload = validPayload();
+			delete payload.pluginConfiguration;
+
+			const sourceWindow = new FakeSourceWindow();
+			const targetWindow = new FakeTargetWindow();
+			const sdk = new InternalSailPointPluginSDK({
+				sourceWindow,
+				targetWindow,
+				targetOrigin: TRUSTED_ORIGIN,
+				now: () => NOW
+			});
+
+			const initializePromise = sdk.initialize();
+			const readyRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+				targetWindow,
+				MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+			);
+			sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+			await Promise.resolve();
+			sourceWindow.emit(
+				makeRequest(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-valid', {
+					token: 'jwt-token'
+				})
+			);
+			await Promise.resolve();
+			shiftMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
+
+			sourceWindow.emit(makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'init-no-config', payload));
+			await expect(initializePromise).rejects.toMatchObject({
+				details: {
+					code: 'HANDSHAKE_FAILED'
+				}
+			});
+		});
+	});
+
 	it('rejects initialization when init payload is not plugin context shaped', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
@@ -690,6 +897,36 @@ describe('plugin SDK branch coverage', () => {
 				message: 'Plugin context is not available after initialization.'
 			}
 		});
+	});
+
+	it('throws rather than guessing an API host when tenant context is absent', async () => {
+		/**
+		 * There is no hostname-derivation fallback since CSTM-354, so an
+		 * un-hydrated context must surface as an error instead of a request aimed
+		 * at a guessed tenant subdomain.
+		 */
+		class BrokenContextSdk extends InternalSailPointPluginSDK {
+			public override async initialize(): Promise<void> {
+				return Promise.resolve();
+			}
+		}
+
+		const fetchMock = jest.fn();
+		const sdk = new BrokenContextSdk({
+			sourceWindow: new FakeSourceWindow(),
+			targetWindow: new FakeTargetWindow(),
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		await expect(sdk.get('/v3/accounts')).rejects.toMatchObject({
+			details: {
+				code: 'INVALID_SEQUENCE',
+				message: 'Tenant context is required to construct the API base URL.'
+			}
+		});
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('returns cached token on non-force refresh and delegates events facade', async () => {
@@ -856,13 +1093,13 @@ describe('plugin SDK branch coverage', () => {
 		expect(postResult).toEqual({ created: true });
 
 		const getCall = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
-		expect(getCall[0]).toBe('https://acme.api.cloud.sailpoint.com/v3/accounts/account-1');
+		expect(getCall[0]).toBe('https://acme.api.identitynow.com/v3/accounts/account-1');
 		expect(getCall[1].method).toBe('GET');
 		const getHeaders = new Headers(getCall[1].headers);
 		expect(getHeaders.get('Authorization')).toBe('Bearer cached-token');
 
 		const postCall = fetchMock.mock.calls[1] as [RequestInfo | URL, RequestInit];
-		expect(postCall[0]).toBe('https://acme.api.cloud.sailpoint.com/v3/accounts');
+		expect(postCall[0]).toBe('https://acme.api.identitynow.com/v3/accounts');
 		expect(postCall[1].method).toBe('POST');
 		expect(postCall[1].body).toBe('{"name":"sample"}');
 		const postHeaders = new Headers(postCall[1].headers);
@@ -883,23 +1120,16 @@ describe('plugin SDK branch coverage', () => {
 		});
 
 		await completeInitialization(sdk, sourceWindow, targetWindow, 'cached-token', {
+			pluginConfiguration: { pluginId: 'plugin-1' },
 			tenantContext: {
-				id: 'tenant-1',
-				name: 'Acme',
+				...TENANT_FIXTURE,
 				pod: 'us-west-2',
 				region: 'us',
-				scriptName: 'acme',
-				org: 'acme',
 				apiUrl: {
 					idn: 'https://acme-fedramp.api.identitynow.com/'
-				},
-				products: []
+				}
 			},
-			userContext: {
-				id: 'user-1',
-				displayName: 'Test User',
-				email: 'test@sailpoint.com'
-			},
+			userContext: USER_FIXTURE,
 			pageContext: {
 				route: 'https://plugins.sailpoint.test/page'
 			},
