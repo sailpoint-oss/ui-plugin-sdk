@@ -1,6 +1,6 @@
 {
 	"name": "@sailpoint/ui-plugin-sdk",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Browser runtime library for SailPoint ISC UI plugins",
 	"type": "module",
 	"license": "MIT",
