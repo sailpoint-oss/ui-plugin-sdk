@@ -30,8 +30,15 @@ Thumbs.db
 .env.*.local
 
 # Cursor / Shipmate (local harness — do not commit)
+.agents
+.claude
 .cursor/
 .shipmate/
 .shipmate-backup-*
+CLAUDE.md
 shipmate.json
 shipmate.json
+
+# Shipmate
+.shipmate/tmp/
+.shipmate/logs/
