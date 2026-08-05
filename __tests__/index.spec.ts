@@ -1,7 +1,7 @@
 import * as sdk from '../src/index';
 import { resolveTargetOrigin } from '../src/runtime/target-origin';
 
-const setAncestorOrigins = (origins: string[]): void => {
+const setAncestorOrigins = (origins: string[] | undefined): void => {
 	Object.defineProperty(window.location, 'ancestorOrigins', {
 		configurable: true,
 		value: origins
@@ -71,6 +71,13 @@ describe('@sailpoint/ui-plugin-sdk', () => {
 		expect(resolveTargetOrigin()).toBe('https://acme.identitynow.com');
 	});
 
+	it('should resolve parentOrigin when ancestorOrigins is unavailable', () => {
+		window.history.replaceState({}, '', '/?parentOrigin=https%3A%2F%2Facme.identitynow.com');
+		setAncestorOrigins(undefined);
+
+		expect(resolveTargetOrigin()).toBe('https://acme.identitynow.com');
+	});
+
 	it('should decode a base64-wrapped parentOrigin query parameter', () => {
 		const encodedOrigin = btoa('http://localhost:3000');
 		window.history.replaceState({}, '', `/?parentOrigin=b64-${encodedOrigin}`);
@@ -90,8 +97,21 @@ describe('@sailpoint/ui-plugin-sdk', () => {
 		expect(() => resolveTargetOrigin()).toThrow('must contain a valid HTTP(S) URL');
 	});
 
+	it('should reject a malformed parentOrigin query parameter', () => {
+		window.history.replaceState({}, '', '/?parentOrigin=not-a-url');
+
+		expect(() => resolveTargetOrigin()).toThrow('must contain a valid HTTP(S) URL');
+	});
+
 	it('should use the browser ancestor origin when it agrees with parentOrigin', () => {
 		window.history.replaceState({}, '', '/?parentOrigin=https%3A%2F%2Facme.identitynow.com');
+		setAncestorOrigins(['https://acme.identitynow.com']);
+
+		expect(resolveTargetOrigin()).toBe('https://acme.identitynow.com');
+	});
+
+	it('should reconcile normalized query and browser ancestor origins', () => {
+		window.history.replaceState({}, '', '/?parentOrigin=https%3A%2F%2FACME.identitynow.com%3A443%2Fplugin%2Fpage');
 		setAncestorOrigins(['https://acme.identitynow.com']);
 
 		expect(resolveTargetOrigin()).toBe('https://acme.identitynow.com');
@@ -132,5 +152,41 @@ describe('@sailpoint/ui-plugin-sdk', () => {
 
 	it('should throw an actionable error when no origin is available', () => {
 		expect(() => sdk.createSDK()).toThrow('Open the plugin inside ISC via ?spPluginDev=<alias>');
+	});
+
+	it('should throw a clear error outside a browser', () => {
+		const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+		Object.defineProperty(globalThis, 'window', {
+			configurable: true,
+			value: undefined
+		});
+
+		try {
+			expect(() => sdk.createSDK()).toThrow(
+				'Unable to resolve App Shell origin outside a browser. Pass config.targetOrigin explicitly.'
+			);
+		} finally {
+			if (windowDescriptor) {
+				Object.defineProperty(globalThis, 'window', windowDescriptor);
+			}
+		}
+	});
+
+	it('should require an explicit origin when document is unavailable', () => {
+		const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: undefined
+		});
+
+		try {
+			expect(() => sdk.createSDK()).toThrow(
+				'Unable to resolve App Shell origin outside a browser. Pass config.targetOrigin explicitly.'
+			);
+		} finally {
+			if (documentDescriptor) {
+				Object.defineProperty(globalThis, 'document', documentDescriptor);
+			}
+		}
 	});
 });
