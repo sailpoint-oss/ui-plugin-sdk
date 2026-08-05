@@ -5,26 +5,65 @@ import type {
 	RuntimeRequestEnvelope,
 	RuntimeResponseEnvelope
 } from '../protocol/types.js';
-import type { PluginContext, ViewportUpdatePayload } from '../public/types.js';
+import type { PluginContext, UserCapabilities, ViewportUpdatePayload } from '../public/types.js';
 
 const DEFAULT_TARGET_ORIGIN = 'https://mock-app-shell.sailpoint.test';
 const DEFAULT_TOKEN = 'mock-sdk-token';
+
+/**
+ * Capability flags for the default mock user.
+ *
+ * All `false` deliberately: the mock is what plugin authors copy, so the default
+ * should model a least-privileged user and force an explicit opt-in to any
+ * capability the plugin's happy path depends on.
+ */
+const DEFAULT_CAPABILITIES: UserCapabilities = {
+	isOrgAdmin: false,
+	isHelpdesk: false,
+	isDashboard: false,
+	isCertAdmin: false,
+	isReportAdmin: false,
+	isSourceAdmin: false,
+	isSourceSubadmin: false,
+	isRoleAdmin: false,
+	isRoleSubadmin: false,
+	isCloudGovAdmin: false,
+	isCloudGovUser: false,
+	isSaasManagementAdmin: false,
+	isSaasManagementReader: false
+};
 
 const DEFAULT_CONTEXT: PluginContext = {
 	tenant: {
 		id: 'mock-tenant',
 		scriptName: 'mock-tenant',
-		org: 'mock-tenant'
+		org: 'mock-tenant',
+		name: 'Mock Tenant',
+		pod: 'mock-pod',
+		region: 'mock-region',
+		apiUrl: {
+			idn: 'https://mock-tenant.api.identitynow.test'
+		},
+		products: []
 	},
 	user: {
 		id: 'mock-user',
 		displayName: 'Mock User',
-		email: 'mock.user@example.com'
+		email: 'mock.user@example.com',
+		capabilities: DEFAULT_CAPABILITIES
 	},
 	page: {
-		route: '/'
+		route: 'https://mock-app-shell.sailpoint.test/'
 	},
-	slot: {}
+	slot: {},
+	pluginConfiguration: {
+		pluginId: 'mock-plugin',
+		slotConfiguration: {
+			slot: 'mock-slot',
+			minimumHeight: 400,
+			maximumHeight: 2000
+		}
+	}
 };
 
 interface MockSourceWindow {

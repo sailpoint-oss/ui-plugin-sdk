@@ -7,6 +7,84 @@ const NOW = 1_721_234_567_000;
 const NOW_ISO = new Date(NOW).toISOString();
 
 /**
+ * Verbatim shape emitted by saas-sp-renderer's `buildInitPayload()` at
+ * `4100daea` (PLTUI-16110). Kept literal on purpose: this fixture is the pinned
+ * host contract, so it must be transcribed from the renderer rather than built
+ * from the SDK's own helpers or types.
+ *
+ * Post-PLTUI-16110 specifics worth preserving verbatim:
+ * - `userContext.capabilities` is an exhaustive boolean map, not a string array.
+ * - `productRight` is absent from products; no per-product access flag replaces it.
+ * - `status` and `dateCreated` are sent as empty strings by the host today.
+ * - `pageContext.route` carries `window.location.href`, a full URL.
+ */
+const APP_SHELL_INIT_PAYLOAD = {
+	pluginConfiguration: {
+		slotConfiguration: {
+			slot: 'full-page',
+			minimumHeight: 400,
+			maximumHeight: 2000
+		},
+		pluginId: 'plugin-1'
+	},
+	userContext: {
+		id: 'user-1',
+		displayName: 'Test User',
+		email: 'test@example.com',
+		capabilities: {
+			isOrgAdmin: true,
+			isHelpdesk: false,
+			isDashboard: true,
+			isCertAdmin: false,
+			isReportAdmin: false,
+			isSourceAdmin: true,
+			isSourceSubadmin: false,
+			isRoleAdmin: false,
+			isRoleSubadmin: false,
+			isCloudGovAdmin: false,
+			isCloudGovUser: false,
+			isSaasManagementAdmin: false,
+			isSaasManagementReader: false
+		}
+	},
+	tenantContext: {
+		id: 'tenant-1',
+		name: 'Acme',
+		pod: 'useast1',
+		region: 'us-east-1',
+		scriptName: 'acme',
+		org: 'acme',
+		apiUrl: {
+			idn: 'https://acme.api.identitynow.com'
+		},
+		products: [
+			{
+				productName: 'idn',
+				url: 'https://acme.identitynow.com',
+				productTenantId: 'product-tenant-1',
+				productRegion: 'us-east-1',
+				apiUrl: 'https://acme.api.identitynow.com',
+				licenses: [
+					{
+						licenseId: 'idn:access-request',
+						legacyFeatureName: 'ACCESS_REQUEST'
+					}
+				],
+				zone: 'useast1',
+				status: '',
+				dateCreated: ''
+			}
+		]
+	},
+	pageContext: {
+		route: 'https://acme.identitynow.com/plugin/plugin-1'
+	},
+	slotContext: {
+		id: 'slot-1'
+	}
+};
+
+/**
  * Minimal shared envelope shape used by the SDK and saas-sp-renderer.
  * `protocolVersion` is optional because App Shell responses carry it in the
  * READY payload instead of repeating it as top-level envelope metadata.
@@ -95,37 +173,7 @@ describe('saas-sp-renderer contract compatibility', () => {
 	it('completes the full handshake with exact App Shell envelope and token shapes', async () => {
 		const sourceWindow = new ContractSourceWindow();
 		const appShell = new ContractAppShell();
-		const contextPayload = {
-			pluginConfiguration: {
-				pluginId: 'plugin-1',
-				slotConfiguration: {
-					slot: 'full-page'
-				}
-			},
-			tenantContext: {
-				id: 'tenant-1',
-				name: 'Acme',
-				pod: 'useast1',
-				region: 'us-east-1',
-				scriptName: 'acme',
-				org: 'acme',
-				apiUrl: {
-					idn: 'https://acme.api.identitynow.com'
-				},
-				products: []
-			},
-			userContext: {
-				id: 'user-1',
-				displayName: 'Test User',
-				email: 'test@example.com'
-			},
-			pageContext: {
-				route: '/plugin/plugin-1'
-			},
-			slotContext: {
-				id: 'slot-1'
-			}
-		};
+		const contextPayload = APP_SHELL_INIT_PAYLOAD;
 
 		appShell.onMessage = message => {
 			expectValidSdkEnvelope(message);
@@ -185,8 +233,18 @@ describe('saas-sp-renderer contract compatibility', () => {
 			tenant: contextPayload.tenantContext,
 			user: contextPayload.userContext,
 			page: contextPayload.pageContext,
-			slot: contextPayload.slotContext
+			slot: contextPayload.slotContext,
+			pluginConfiguration: contextPayload.pluginConfiguration
 		});
+		/**
+		 * AC-4: the capability map reaches the plugin key-for-key, and AC-8: the
+		 * host's mount configuration is no longer silently discarded.
+		 */
+		const context = await sdk.getContext();
+		expect(context.user.capabilities).toEqual(contextPayload.userContext.capabilities);
+		expect(context.pluginConfiguration.pluginId).toBe('plugin-1');
+		expect(context.pluginConfiguration.slotConfiguration?.maximumHeight).toBe(2000);
+		expect(context.tenant.products[0].licenses[0].legacyFeatureName).toBe('ACCESS_REQUEST');
 		/**
 		 * Plugin consumers receive only the access-token string even though App
 		 * Shell transports a token metadata object.
@@ -230,13 +288,7 @@ describe('saas-sp-renderer contract compatibility', () => {
 				queueMicrotask(() => {
 					sourceWindow.emit(
 						appShellEnvelope(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'plugin-init-2', {
-							tenantContext: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
-							userContext: {
-								id: 'user-1',
-								displayName: 'Test User',
-								email: 'test@example.com'
-							},
-							pageContext: { route: '/plugin/plugin-1' },
+							...APP_SHELL_INIT_PAYLOAD,
 							slotContext: {}
 						})
 					);

@@ -17,6 +17,45 @@ const UNTRUSTED_ORIGIN = 'https://evil.example';
 const NOW = 1_717_600_000_000;
 const NOW_ISO = new Date(NOW).toISOString();
 
+/**
+ * Exhaustive capability map, as App Shell always sends it.
+ */
+const CAPABILITIES = {
+	isOrgAdmin: true,
+	isHelpdesk: false,
+	isDashboard: false,
+	isCertAdmin: false,
+	isReportAdmin: false,
+	isSourceAdmin: false,
+	isSourceSubadmin: false,
+	isRoleAdmin: false,
+	isRoleSubadmin: false,
+	isCloudGovAdmin: false,
+	isCloudGovUser: false,
+	isSaasManagementAdmin: false,
+	isSaasManagementReader: false
+};
+
+const TENANT_FIXTURE = {
+	id: 'tenant-1',
+	scriptName: 'acme',
+	org: 'acme',
+	name: 'Acme',
+	pod: 'useast1',
+	region: 'us-east-1',
+	apiUrl: {
+		idn: 'https://acme.api.identitynow.com'
+	},
+	products: []
+};
+
+const USER_FIXTURE = {
+	id: 'user-1',
+	displayName: 'Test User',
+	email: 'test@sailpoint.com',
+	capabilities: CAPABILITIES
+};
+
 class FakeSourceWindow implements MessageSource {
 	private readonly listeners = new Set<(event: RuntimeMessageEvent) => void>();
 
@@ -339,8 +378,8 @@ describe('PluginRuntimeClient', () => {
 
 		const appShellContextPayload = {
 			pluginConfiguration: { pluginId: 'plugin-1' },
-			tenantContext: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
-			userContext: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
+			tenantContext: TENANT_FIXTURE,
+			userContext: USER_FIXTURE,
 			pageContext: { route: 'https://plugins.sailpoint.test/page' },
 			slotContext: { id: 'slot-1' }
 		};
@@ -363,7 +402,8 @@ describe('PluginRuntimeClient', () => {
 			tenant: appShellContextPayload.tenantContext,
 			user: appShellContextPayload.userContext,
 			page: appShellContextPayload.pageContext,
-			slot: appShellContextPayload.slotContext
+			slot: appShellContextPayload.slotContext,
+			pluginConfiguration: appShellContextPayload.pluginConfiguration
 		});
 	});
 
@@ -395,8 +435,9 @@ describe('PluginRuntimeClient', () => {
 		findAndRemoveMessageByType<RuntimeResponseEnvelope>(targetWindow, MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES);
 		sourceWindow.emit(
 			makeRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'plugin-init-2', {
-				tenant: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
-				user: { id: 'user-1', displayName: 'Test User', email: 'test@sailpoint.com' },
+				pluginConfiguration: { pluginId: 'plugin-1' },
+				tenant: TENANT_FIXTURE,
+				user: USER_FIXTURE,
 				page: { route: 'https://plugins.sailpoint.test/page' },
 				slot: { id: 'slot-1' }
 			})
