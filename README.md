@@ -15,6 +15,33 @@ Browser runtime library for SailPoint ISC UI plugins — COIP/iframe handshake a
 pnpm install
 ```
 
+### Usage
+
+When the plugin is mounted inside ISC, the SDK resolves the App Shell origin from
+the iframe context:
+
+```typescript
+import { createSDK } from '@sailpoint/ui-plugin-sdk';
+
+const sdk = createSDK();
+const context = await sdk.getContext();
+```
+
+The SDK reconciles the App Shell-provided `parentOrigin` query parameter with
+the browser ancestor origin when available, then falls back to the document
+referrer. It throws if no trusted origin can be resolved or if the query and
+browser ancestor origins disagree.
+
+This resolution is defense-in-depth for consistent postMessage targeting and
+inbound origin validation. A plugin's `frame-ancestors` CSP remains the primary
+control that prevents untrusted pages from embedding it.
+
+Pass `targetOrigin` explicitly for tests, mocks, or non-standard embeddings:
+
+```typescript
+const sdk = createSDK({ targetOrigin: 'https://app-shell.example.com' });
+```
+
 ### Commands
 
 | Command | Description |

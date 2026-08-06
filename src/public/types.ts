@@ -152,7 +152,7 @@ export interface ViewportUpdatePayload {
 }
 
 export interface SailPointPluginSDKConfig {
-	targetOrigin: string;
+	targetOrigin?: string;
 	parentWindow?: MessageTarget;
 	targetWindow?: MessageTarget;
 	sourceWindow?: MessageSource;
