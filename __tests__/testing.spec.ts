@@ -1,26 +1,52 @@
 import { createSDK } from '../src';
 import { MESSAGE_TYPES } from '../src/protocol/constants';
-import type { PluginContext } from '../src/public/types';
+import type { PluginContext, UserCapabilities } from '../src/public/types';
 import { mockSdkContext } from '../src/testing';
 
 const NOW = 1_717_600_000_000;
 const NOW_ISO = new Date(NOW).toISOString();
+const CAPABILITIES: UserCapabilities = {
+	isOrgAdmin: true,
+	isHelpdesk: false,
+	isDashboard: true,
+	isCertAdmin: false,
+	isReportAdmin: false,
+	isSourceAdmin: false,
+	isSourceSubadmin: false,
+	isRoleAdmin: false,
+	isRoleSubadmin: false,
+	isCloudGovAdmin: false,
+	isCloudGovUser: false,
+	isSaasManagementAdmin: false,
+	isSaasManagementReader: false
+};
 const CONTEXT: PluginContext = {
 	tenant: {
 		id: 'tenant-1',
 		scriptName: 'acme',
-		org: 'acme'
+		org: 'acme',
+		name: 'Acme',
+		pod: 'useast1',
+		region: 'us-east-1',
+		apiUrl: {
+			idn: 'https://acme.api.identitynow.com'
+		},
+		products: []
 	},
 	user: {
 		id: 'user-1',
 		displayName: 'Test User',
-		email: 'test@sailpoint.com'
+		email: 'test@sailpoint.com',
+		capabilities: CAPABILITIES
 	},
 	page: {
-		route: '/plugins/accounts'
+		route: 'https://acme.identitynow.com/plugins/accounts'
 	},
 	slot: {
 		id: 'slot-1'
+	},
+	pluginConfiguration: {
+		pluginId: 'plugin-1'
 	}
 };
 

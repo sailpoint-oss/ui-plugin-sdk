@@ -60,16 +60,50 @@ The `@sailpoint/ui-plugin-sdk/testing` subpath provides a framework-agnostic
 mock App Shell for browser-like unit-test environments. Install the mock before
 calling an SDK method that starts the handshake, then restore it after the test.
 
+`context` is optional — the default models a valid least-privileged user, so pass
+it only when the test depends on specific tenant or capability values.
+
 ```typescript
 import { createSDK } from '@sailpoint/ui-plugin-sdk';
+import type { UserCapabilities } from '@sailpoint/ui-plugin-sdk';
 import { mockSdkContext } from '@sailpoint/ui-plugin-sdk/testing';
+
+/**
+ * Capability flags are exhaustive: App Shell always sends every key, so a mock
+ * context must too. Start from all-false and enable what the test needs.
+ */
+const capabilities: UserCapabilities = {
+	isOrgAdmin: true,
+	isHelpdesk: false,
+	isDashboard: false,
+	isCertAdmin: false,
+	isReportAdmin: false,
+	isSourceAdmin: false,
+	isSourceSubadmin: false,
+	isRoleAdmin: false,
+	isRoleSubadmin: false,
+	isCloudGovAdmin: false,
+	isCloudGovUser: false,
+	isSaasManagementAdmin: false,
+	isSaasManagementReader: false
+};
 
 const appShell = mockSdkContext({
 	context: {
-		tenant: { id: 'tenant-1', scriptName: 'acme', org: 'acme' },
-		user: { id: 'user-1', displayName: 'Test User', email: 'test@example.com' },
-		page: { route: '/plugins/example' },
-		slot: { id: 'slot-1' }
+		tenant: {
+			id: 'tenant-1',
+			scriptName: 'acme',
+			org: 'acme',
+			name: 'Acme',
+			pod: 'useast1',
+			region: 'us-east-1',
+			apiUrl: { idn: 'https://acme.api.identitynow.com' },
+			products: []
+		},
+		user: { id: 'user-1', displayName: 'Test User', email: 'test@example.com', capabilities },
+		page: { route: 'https://acme.identitynow.com/plugins/example' },
+		slot: { id: 'slot-1' },
+		pluginConfiguration: { pluginId: 'plugin-1' }
 	}
 });
 const sdk = createSDK({ targetOrigin: appShell.targetOrigin });

@@ -2,11 +2,13 @@ import { COIP_PROTOCOL_VERSION, MESSAGE_TYPES } from '../protocol/constants';
 import type { EventMessageType, MessageTarget, RequestMessageType, RuntimeRequestEnvelope } from '../protocol/types';
 import type {
 	PageContext,
+	PluginConfiguration,
 	PluginContext,
 	SailPointPluginSDKConfig,
 	SlotContext,
 	TenantContext,
 	TokenUpdatePayload,
+	UserCapabilities,
 	UserContext,
 	ViewportUpdatePayload
 } from '../public/types';
@@ -35,6 +37,101 @@ const defaultParentWindow = (): MessageTarget => {
 
 const hasStringField = (value: Record<string, unknown>, field: string): boolean => {
 	return typeof value[field] === 'string';
+};
+
+/**
+ * Every capability flag App Shell sends, as a runtime list.
+ *
+ * Declared literally rather than derived so each key is greppable, and
+ * `satisfies` against {@link UserCapabilities} so the list and the interface
+ * cannot drift apart when the host adds a capability.
+ */
+export const CAPABILITY_FLAG_KEYS = [
+	'isOrgAdmin',
+	'isHelpdesk',
+	'isDashboard',
+	'isCertAdmin',
+	'isReportAdmin',
+	'isSourceAdmin',
+	'isSourceSubadmin',
+	'isRoleAdmin',
+	'isRoleSubadmin',
+	'isCloudGovAdmin',
+	'isCloudGovUser',
+	'isSaasManagementAdmin',
+	'isSaasManagementReader'
+] as const satisfies readonly (keyof UserCapabilities)[];
+
+/**
+ * True when `value` carries all {@link CAPABILITY_FLAG_KEYS} as booleans.
+ *
+ * The host documents the map as exhaustive, so a partial map means the payload
+ * did not come from a supported App Shell and the handshake must fail rather
+ * than hand the plugin flags that read as `undefined`.
+ */
+const isCompleteCapabilityMap = (value: unknown): boolean => {
+	if (!isRecord(value)) {
+		return false;
+	}
+
+	return CAPABILITY_FLAG_KEYS.every(key => typeof value[key] === 'boolean');
+};
+
+const hasArrayField = (value: Record<string, unknown>, field: string): boolean => {
+	return Array.isArray(value[field]);
+};
+
+/**
+ * Validates the tenant slice of the init payload.
+ *
+ * `products` is checked for arrayness only. Its elements are not walked: the
+ * host builds them from its own typed model, and rejecting the whole handshake
+ * over one malformed product would be a worse failure than letting the plugin
+ * see it.
+ */
+const isTenantContext = (value: unknown): value is TenantContext => {
+	if (!isRecord(value)) {
+		return false;
+	}
+
+	return (
+		hasStringField(value, 'id') &&
+		hasStringField(value, 'scriptName') &&
+		hasStringField(value, 'org') &&
+		hasStringField(value, 'name') &&
+		hasStringField(value, 'pod') &&
+		hasStringField(value, 'region') &&
+		isRecord(value.apiUrl) &&
+		hasStringField(value.apiUrl, 'idn') &&
+		hasArrayField(value, 'products')
+	);
+};
+
+const isUserContext = (value: unknown): value is UserContext => {
+	if (!isRecord(value)) {
+		return false;
+	}
+
+	return (
+		hasStringField(value, 'id') &&
+		hasStringField(value, 'displayName') &&
+		hasStringField(value, 'email') &&
+		isCompleteCapabilityMap(value.capabilities)
+	);
+};
+
+const isPageContext = (value: unknown): value is PageContext => {
+	return isRecord(value) && hasStringField(value, 'route');
+};
+
+/**
+ * Validates the plugin-configuration slice.
+ *
+ * Both members are optional in the host contract, so presence of the object
+ * itself is the only requirement.
+ */
+const isPluginConfiguration = (value: unknown): value is PluginConfiguration => {
+	return isRecord(value);
 };
 
 const readTokenValue = (value: unknown): string | null => {
@@ -73,37 +170,27 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 		return null;
 	}
 
-	const context = payload as Record<string, unknown>;
-	const tenant = isRecord(context.tenant)
-		? context.tenant
-		: isRecord(context.tenantContext)
-			? context.tenantContext
-			: null;
-	const user = isRecord(context.user) ? context.user : isRecord(context.userContext) ? context.userContext : null;
-	const page = isRecord(context.page) ? context.page : isRecord(context.pageContext) ? context.pageContext : null;
+	const context = payload;
+	const tenant = context.tenant ?? context.tenantContext;
+	const user = context.user ?? context.userContext;
+	const page = context.page ?? context.pageContext;
 	const slot = isRecord(context.slot) ? context.slot : isRecord(context.slotContext) ? context.slotContext : {};
 
-	if (!tenant || !user || !page || !isRecord(slot)) {
-		return null;
-	}
-
 	if (
-		!hasStringField(tenant, 'id') ||
-		!hasStringField(tenant, 'scriptName') ||
-		!hasStringField(tenant, 'org') ||
-		!hasStringField(user, 'id') ||
-		!hasStringField(user, 'displayName') ||
-		!hasStringField(user, 'email') ||
-		!hasStringField(page, 'route')
+		!isTenantContext(tenant) ||
+		!isUserContext(user) ||
+		!isPageContext(page) ||
+		!isPluginConfiguration(context.pluginConfiguration)
 	) {
 		return null;
 	}
 
 	return {
-		tenant: tenant as TenantContext,
-		user: user as UserContext,
-		page: page as PageContext,
-		slot: slot as SlotContext
+		tenant,
+		user,
+		page,
+		slot: slot as SlotContext,
+		pluginConfiguration: context.pluginConfiguration
 	};
 };
 
@@ -428,30 +515,23 @@ export class InternalSailPointPluginSDK {
 			});
 		}
 
-		const tenant = this.pluginContext?.tenant;
-		const apiUrlFromContext = tenant?.apiUrl;
-		if (isRecord(apiUrlFromContext) && hasStringField(apiUrlFromContext, 'idn')) {
-			const baseUrl = apiUrlFromContext.idn.replace(/\/+$/g, '');
-			return `${baseUrl}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
-		}
-
-		const tenantSubdomain =
-			typeof tenant?.org === 'string' && tenant.org.length > 0
-				? tenant.org
-				: typeof tenant?.scriptName === 'string' && tenant.scriptName.length > 0
-					? tenant.scriptName
-					: null;
-
-		if (!tenantSubdomain) {
+		/**
+		 * `tenant.apiUrl.idn` is validated at handshake time, so there is no
+		 * hostname-derivation fallback here by design: a plugin that reached this
+		 * point has a real base URL. Guessing one would silently target a
+		 * different host, which is a worse failure than the thrown error below.
+		 */
+		const apiUrlFromContext = this.pluginContext?.tenant.apiUrl;
+		if (!apiUrlFromContext) {
 			throw new RuntimeEngineError({
 				code: 'INVALID_SEQUENCE',
-				message: 'Tenant context is required to construct the default API base URL.'
+				message: 'Tenant context is required to construct the API base URL.'
 			});
 		}
 
-		return `https://${tenantSubdomain}.api.cloud.sailpoint.com${
-			normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`
-		}`;
+		const baseUrl = apiUrlFromContext.idn.replace(/\/+$/g, '');
+
+		return `${baseUrl}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
 	}
 
 	private isTokenExpired(token: string): boolean {
@@ -527,6 +607,7 @@ type PluginRuntimeClientConfig = InternalSailPointPluginSDKConfig;
 export type {
 	CurrentTokenResponsePayload,
 	PageContext,
+	PluginConfiguration,
 	PluginContext,
 	PluginContext as InitializationContext,
 	InternalSailPointPluginSDKConfig,
@@ -534,6 +615,7 @@ export type {
 	SlotContext,
 	TenantContext,
 	TokenUpdatePayload,
+	UserCapabilities,
 	UserContext,
 	ViewportUpdatePayload
 };
