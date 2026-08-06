@@ -174,37 +174,6 @@ describe('saas-sp-renderer contract compatibility', () => {
 		const sourceWindow = new ContractSourceWindow();
 		const appShell = new ContractAppShell();
 		window.history.replaceState({}, '', `/?parentOrigin=${encodeURIComponent(APP_SHELL_ORIGIN)}`);
-		const contextPayload = {
-			pluginConfiguration: {
-				pluginId: 'plugin-1',
-				slotConfiguration: {
-					slot: 'full-page'
-				}
-			},
-			tenantContext: {
-				id: 'tenant-1',
-				name: 'Acme',
-				pod: 'useast1',
-				region: 'us-east-1',
-				scriptName: 'acme',
-				org: 'acme',
-				apiUrl: {
-					idn: 'https://acme.api.identitynow.com'
-				},
-				products: []
-			},
-			userContext: {
-				id: 'user-1',
-				displayName: 'Test User',
-				email: 'test@example.com'
-			},
-			pageContext: {
-				route: '/plugin/plugin-1'
-			},
-			slotContext: {
-				id: 'slot-1'
-			}
-		};
 		const contextPayload = APP_SHELL_INIT_PAYLOAD;
 
 		appShell.onMessage = message => {
