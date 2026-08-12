@@ -42,6 +42,31 @@ Pass `targetOrigin` explicitly for tests, mocks, or non-standard embeddings:
 const sdk = createSDK({ targetOrigin: 'https://app-shell.example.com' });
 ```
 
+### Handling API Errors
+
+Non-OK responses from `api.get` and `api.post` throw `ApiError`, which exposes the
+HTTP status, status text, request path, and response body. JSON bodies are parsed;
+non-JSON bodies remain strings, and empty or unreadable bodies are `null`.
+
+```typescript
+import { ApiError, createSDK } from '@sailpoint/ui-plugin-sdk';
+
+const sdk = createSDK();
+
+try {
+	await sdk.api.get('/v3/accounts/missing');
+} catch (error) {
+	if (error instanceof ApiError) {
+		handleRequestFailure(error.status, error.body);
+	} else {
+		throw error;
+	}
+}
+```
+
+Treat `body` as untrusted API data and avoid logging it without reviewing it for
+sensitive content.
+
 ### Commands
 
 | Command | Description |

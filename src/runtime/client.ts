@@ -1,5 +1,6 @@
 import { COIP_PROTOCOL_VERSION, MESSAGE_TYPES } from '../protocol/constants';
 import type { EventMessageType, MessageTarget, RequestMessageType, RuntimeRequestEnvelope } from '../protocol/types';
+import { ApiError } from '../public/api.error';
 import type {
 	PageContext,
 	PluginConfiguration,
@@ -37,6 +38,25 @@ const defaultParentWindow = (): MessageTarget => {
 
 const hasStringField = (value: Record<string, unknown>, field: string): boolean => {
 	return typeof value[field] === 'string';
+};
+
+const readApiErrorBody = async (response: Response): Promise<unknown> => {
+	let text: string;
+	try {
+		text = await response.text();
+	} catch {
+		return null;
+	}
+
+	if (text.trim().length === 0) {
+		return null;
+	}
+
+	try {
+		return JSON.parse(text) as unknown;
+	} catch {
+		return text;
+	}
 };
 
 /**
@@ -459,12 +479,11 @@ export class InternalSailPointPluginSDK {
 		}
 
 		if (!response.ok) {
-			throw new RuntimeEngineError({
-				code: 'INVALID_SEQUENCE',
-				message: `API request failed with status ${response.status}.`,
-				details: {
-					status: response.status
-				}
+			throw new ApiError({
+				status: response.status,
+				statusText: response.statusText || '',
+				path: path.trim(),
+				body: await readApiErrorBody(response)
 			});
 		}
 

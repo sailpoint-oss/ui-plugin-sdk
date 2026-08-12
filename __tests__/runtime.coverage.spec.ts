@@ -1,3 +1,4 @@
+import { ApiError } from '../src/index';
 import { COIP_PROTOCOL_VERSION, MESSAGE_TYPES } from '../src/protocol/constants';
 import type {
 	MessageSource,
@@ -152,11 +153,23 @@ const createJwtWithExp = (expSeconds: number): string => {
 	)}.signature`;
 };
 
-const jsonResponse = (status: number, payload: unknown): Response => {
+const jsonResponse = (status: number, payload: unknown, statusText = ''): Response => {
+	const serializedBody = JSON.stringify(payload);
 	return {
 		ok: status >= 200 && status < 300,
 		status,
-		json: async () => payload
+		statusText,
+		json: async () => payload,
+		text: async () => serializedBody ?? ''
+	} as Response;
+};
+
+const textResponse = (status: number, body: string, statusText = ''): Response => {
+	return {
+		ok: status >= 200 && status < 300,
+		status,
+		statusText,
+		text: async () => body
 	} as Response;
 };
 
@@ -1107,6 +1120,137 @@ describe('plugin SDK branch coverage', () => {
 		expect(postHeaders.get('Content-Type')).toBe('application/json');
 	});
 
+	it('throws ApiError with a parsed JSON body for non-OK api responses', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const responseBody = {
+			messages: [{ text: 'The account name is required.' }]
+		};
+		const fetchMock = jest.fn().mockResolvedValueOnce(jsonResponse(422, responseBody, 'Unprocessable Entity'));
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		let caughtError: unknown;
+		try {
+			await sdk.post(' /v3/accounts ', { name: '' });
+		} catch (error) {
+			caughtError = error;
+		}
+
+		expect(caughtError).toBeInstanceOf(ApiError);
+		expect(caughtError).not.toBeInstanceOf(RuntimeEngineError);
+		expect(caughtError).toMatchObject({
+			name: 'ApiError',
+			message: 'API request failed with status 422 Unprocessable Entity.',
+			status: 422,
+			statusText: 'Unprocessable Entity',
+			path: '/v3/accounts',
+			body: responseBody
+		});
+	});
+
+	it('throws ApiError with a null body for an empty 5xx response', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const fetchMock = jest.fn().mockResolvedValueOnce(jsonResponse(503, undefined, 'Service Unavailable'));
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		await expect(sdk.get('/v3/accounts')).rejects.toMatchObject({
+			status: 503,
+			statusText: 'Service Unavailable',
+			path: '/v3/accounts',
+			body: null
+		});
+	});
+
+	it('retains a non-JSON API error body as raw text', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const fetchMock = jest
+			.fn()
+			.mockResolvedValueOnce(textResponse(502, 'upstream service unavailable', 'Bad Gateway'));
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		await expect(sdk.get('/v3/accounts')).rejects.toMatchObject({
+			status: 502,
+			statusText: 'Bad Gateway',
+			path: '/v3/accounts',
+			body: 'upstream service unavailable'
+		});
+	});
+
+	it('still throws ApiError when the error response body cannot be read', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const fetchMock = jest.fn().mockResolvedValueOnce({
+			ok: false,
+			status: 500,
+			statusText: 'Internal Server Error',
+			text: async () => {
+				throw new Error('body stream failed');
+			}
+		} as Response);
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		await expect(sdk.get('/v3/accounts')).rejects.toMatchObject({
+			status: 500,
+			statusText: 'Internal Server Error',
+			path: '/v3/accounts',
+			body: null
+		});
+	});
+
+	it('returns undefined for a successful 204 API response without reading a body', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const response = jsonResponse(204, undefined, 'No Content');
+		const textSpy = jest.spyOn(response, 'text');
+		const fetchMock = jest.fn().mockResolvedValueOnce(response);
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		await expect(sdk.get('/v3/accounts')).resolves.toBeUndefined();
+		expect(textSpy).not.toHaveBeenCalled();
+	});
+
 	it('normalizes renderer context keys and uses tenant apiUrl.idn when provided', async () => {
 		const sourceWindow = new FakeSourceWindow();
 		const targetWindow = new FakeTargetWindow();
@@ -1244,6 +1388,41 @@ describe('plugin SDK branch coverage', () => {
 		const secondCall = fetchMock.mock.calls[1] as [RequestInfo | URL, RequestInit];
 		expect(new Headers(firstCall[1].headers).get('Authorization')).toBe('Bearer cached-token');
 		expect(new Headers(secondCall[1].headers).get('Authorization')).toBe('Bearer fresh-token-after-401');
+	});
+
+	it('throws ApiError from the final response when the 401 retry also fails', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const fetchMock = jest
+			.fn()
+			.mockResolvedValueOnce(jsonResponse(401, { error: 'expired' }, 'Unauthorized'))
+			.mockResolvedValueOnce(jsonResponse(403, { error: 'forbidden' }, 'Forbidden'));
+		class RetryTokenSdk extends InternalSailPointPluginSDK {
+			public tokenCalls: boolean[] = [];
+
+			public override async getToken(forceRefresh = false): Promise<string> {
+				this.tokenCalls.push(forceRefresh);
+				return forceRefresh ? 'fresh-token-after-401' : 'cached-token';
+			}
+		}
+		const sdk = new RetryTokenSdk({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		await expect(sdk.get('/v3/identity')).rejects.toMatchObject({
+			status: 403,
+			statusText: 'Forbidden',
+			path: '/v3/identity',
+			body: { error: 'forbidden' }
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(sdk.tokenCalls).toEqual([false, true]);
 	});
 
 	it('rejects absolute urls for api wrappers', async () => {
