@@ -42,6 +42,3 @@ shipmate.json
 # Shipmate
 .shipmate/tmp/
 .shipmate/logs/
-
-# Local package packs
-*.tgz
