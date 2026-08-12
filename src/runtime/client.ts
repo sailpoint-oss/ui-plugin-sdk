@@ -205,6 +205,7 @@ export class InternalSailPointPluginSDK {
 	private readonly now: () => number;
 	private readonly fetchApi?: typeof fetch;
 	private initialized = false;
+	private initPromise: Promise<void> | null = null;
 	private currentToken: string | null = null;
 	private tokenRefreshInFlight: Promise<string> | null = null;
 	private pluginContext: PluginContext | null = null;
@@ -242,13 +243,24 @@ export class InternalSailPointPluginSDK {
 			this.tokenSubscriptionCleanup = null;
 		}
 		this.initialized = false;
+		this.initPromise = null;
 	}
 
-	public async initialize(): Promise<void> {
-		if (this.initialized) {
-			return;
+	public initialize(): Promise<void> {
+		if (this.initPromise) {
+			return this.initPromise;
 		}
 
+		this.initPromise = this.runHandshake().catch((error: unknown) => {
+			this.initPromise = null;
+			this.initialized = false;
+			throw error;
+		});
+
+		return this.initPromise;
+	}
+
+	private async runHandshake(): Promise<void> {
 		this.start();
 		if (!this.tokenSubscriptionCleanup) {
 			this.tokenSubscriptionCleanup = this.onTokenUpdate(payload => {
@@ -434,6 +446,7 @@ export class InternalSailPointPluginSDK {
 		init: RequestInit,
 		data?: unknown
 	): Promise<TResponse> {
+		await this.initialize();
 		const apiUrl = this.buildApiUrl(path);
 		const requestInit = this.buildRequestInit(init, data);
 		let response = await this.fetchWithAuthorization(apiUrl, requestInit, false);

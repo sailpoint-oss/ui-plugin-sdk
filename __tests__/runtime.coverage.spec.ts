@@ -1176,6 +1176,11 @@ describe('plugin SDK branch coverage', () => {
 		await completeInitialization(sdk, sourceWindow, targetWindow);
 
 		const failedRequest = sdk.get('/failure-case');
+		/**
+		 * api.get now awaits initialize() before token refresh, so flush two
+		 * microtasks before the forced-refresh request is posted.
+		 */
+		await Promise.resolve();
 		await Promise.resolve();
 		const invalidRefresh = shiftMessageByType<RuntimeRequestEnvelope>(
 			targetWindow,
@@ -1259,6 +1264,135 @@ describe('plugin SDK branch coverage', () => {
 				message: 'api.get/api.post expect a path suffix, not an absolute URL.'
 			}
 		});
+	});
+
+	it('self-initializes api.get before any explicit getContext call', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const fetchMock = jest.fn().mockResolvedValue(jsonResponse(200, { id: 'account-1' }));
+		const countReadyRequests = (): number =>
+			targetWindow.sentMessages.filter(sent => {
+				const message = sent.message as { type?: string };
+				return message.type === MESSAGE_TYPES.SP_PLUGIN_READY_REQ;
+			}).length;
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		const getPromise = sdk.get<{ id: string }>('/v3/accounts/account-1');
+		await Promise.resolve();
+		expect(countReadyRequests()).toBe(1);
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		await expect(getPromise).resolves.toEqual({ id: 'account-1' });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const getCall = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+		expect(getCall[0]).toBe('https://acme.api.identitynow.com/v3/accounts/account-1');
+	});
+
+	it('shares one handshake across concurrent first callers', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const fetchMock = jest.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+		const countByType = (type: string): number =>
+			targetWindow.sentMessages.filter(sent => {
+				const message = sent.message as { type?: string };
+				return message.type === type;
+			}).length;
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			fetchApi: fetchMock as unknown as typeof fetch
+		});
+
+		const concurrent = Promise.all([sdk.getContext(), sdk.getToken(), sdk.get<{ ok: boolean }>('/v3/x')]);
+		await Promise.resolve();
+		expect(countByType(MESSAGE_TYPES.SP_PLUGIN_READY_REQ)).toBe(1);
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+
+		const [context, token, apiResult] = await concurrent;
+		expect(context.tenant.id).toBe('tenant-1');
+		expect(token).toBe('cached-token');
+		expect(apiResult).toEqual({ ok: true });
+		/**
+		 * completeInitialization shifts READY / token-delivery / init responses out of the
+		 * outbound buffer; assert no duplicate READY was produced during the concurrent start.
+		 */
+		expect(countByType(MESSAGE_TYPES.SP_PLUGIN_READY_REQ)).toBe(0);
+	});
+
+	it('retries initialize after a failed handshake instead of caching rejection', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const countReadyRequests = (): number =>
+			targetWindow.sentMessages.filter(sent => {
+				const message = sent.message as { type?: string };
+				return message.type === MESSAGE_TYPES.SP_PLUGIN_READY_REQ;
+			}).length;
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW,
+			requestTimeoutMs: 20
+		});
+
+		const firstAttempt = sdk.initialize();
+		await Promise.resolve();
+		expect(countReadyRequests()).toBe(1);
+		const readyRequest = shiftMessageByType<RuntimeRequestEnvelope>(
+			targetWindow,
+			MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+		);
+		sourceWindow.emit(makeResponse(MESSAGE_TYPES.SP_PLUGIN_READY_RES, readyRequest.requestId, { ready: true }));
+		await expect(firstAttempt).rejects.toMatchObject({
+			details: {
+				code: 'REQUEST_TIMEOUT'
+			}
+		});
+
+		const retryAttempt = sdk.initialize();
+		await Promise.resolve();
+		expect(countReadyRequests()).toBe(1);
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+		await expect(retryAttempt).resolves.toBeUndefined();
+		await expect(sdk.getContext()).resolves.toMatchObject({
+			tenant: { id: 'tenant-1' }
+		});
+	});
+
+	it('does not re-run handshake on repeated initialize after success', async () => {
+		const sourceWindow = new FakeSourceWindow();
+		const targetWindow = new FakeTargetWindow();
+		const sdk = new InternalSailPointPluginSDK({
+			sourceWindow,
+			targetWindow,
+			targetOrigin: TRUSTED_ORIGIN,
+			now: () => NOW
+		});
+
+		await completeInitialization(sdk, sourceWindow, targetWindow);
+		const messageCountAfterInit = targetWindow.sentMessages.length;
+		const readyCountAfterInit = targetWindow.sentMessages.filter(sent => {
+			const message = sent.message as { type?: string };
+			return message.type === MESSAGE_TYPES.SP_PLUGIN_READY_REQ;
+		}).length;
+
+		await expect(sdk.initialize()).resolves.toBeUndefined();
+		await expect(sdk.getContext()).resolves.toMatchObject({ tenant: { id: 'tenant-1' } });
+		expect(targetWindow.sentMessages.length).toBe(messageCountAfterInit);
+		expect(
+			targetWindow.sentMessages.filter(sent => {
+				const message = sent.message as { type?: string };
+				return message.type === MESSAGE_TYPES.SP_PLUGIN_READY_REQ;
+			})
+		).toHaveLength(readyCountAfterInit);
 	});
 
 	it('cleans up token subscription on stop and handshake delegates to initialize', async () => {
