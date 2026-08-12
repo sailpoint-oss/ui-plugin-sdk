@@ -1,3 +1,10 @@
+/**
+ * Represents a non-OK HTTP response returned by `api.get` or `api.post`.
+ *
+ * The `body` property contains untrusted API data as parsed JSON, raw text, or
+ * `null` when the response body is empty or unreadable. Validate it before
+ * rendering, logging, or otherwise using its contents.
+ */
 export class ApiError extends Error {
 	public readonly status: number;
 	public readonly statusText: string;
