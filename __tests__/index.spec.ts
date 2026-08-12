@@ -26,6 +26,27 @@ describe('@sailpoint/ui-plugin-sdk', () => {
 		expect(sdk.VERSION).toBe('0.0.0');
 	});
 
+	it('should export ApiError for consumer instanceof narrowing', () => {
+		const body = { messages: [{ text: 'Not found' }] };
+		const error = new sdk.ApiError({
+			status: 404,
+			statusText: 'Not Found',
+			path: '/v3/accounts/missing',
+			body
+		});
+
+		expect(error).toBeInstanceOf(Error);
+		expect(error).toBeInstanceOf(sdk.ApiError);
+		expect(error).toMatchObject({
+			name: 'ApiError',
+			message: 'API request failed with status 404 Not Found.',
+			status: 404,
+			statusText: 'Not Found',
+			path: '/v3/accounts/missing',
+			body
+		});
+	});
+
 	it('should expose plugin-facing API surface only', () => {
 		expect(sdk.createSDK).toBeDefined();
 		expect('RuntimeEngine' in sdk).toBe(false);

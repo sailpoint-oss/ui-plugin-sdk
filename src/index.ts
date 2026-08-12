@@ -23,6 +23,7 @@ export type {
 	UserContext,
 	ViewportUpdatePayload
 } from './public/types';
+export { ApiError } from './public/api.error';
 export { createSDK } from './public/create-sdk';
 
 export const VERSION = '0.0.0';
