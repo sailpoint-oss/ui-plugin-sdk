@@ -1,28 +1,51 @@
 name: Release
 
+# PHASE 1 (current): manual dispatch, token auth.
+# Used to get the package onto npm the first time and to shake out the workflow.
+#
+# PHASE 2 (after the first publish succeeds): switch to tag-triggered OIDC.
+# See the checklist at the bottom of this file.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, without a leading v (e.g. 0.0.1)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Pack and validate without publishing'
+        required: false
+        type: boolean
+        default: true
+      create_release:
+        description: 'Also tag the commit and create a GitHub Release'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
   release:
-    name: Version or Publish
+    name: Publish to npm
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # tag the commit + create the GitHub Release
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Enable Corepack
         run: corepack enable
 
+      # registry-url writes an .npmrc with `_authToken=${NODE_AUTH_TOKEN}`,
+      # which pnpm expands from the env on the publish step below.
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
@@ -32,18 +55,114 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate inputs
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'${{ inputs.version }}' is not a valid semver version"
+            exit 1
+          fi
+
+          # Never let a prerelease land on the `latest` dist-tag.
+          if [[ "$VERSION" == *-* ]]; then
+            echo "npm_tag=next" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize
+        run: |
+          {
+            echo "### Release ${{ steps.meta.outputs.version }}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| dist-tag | \`${{ steps.meta.outputs.npm_tag }}\` |"
+            echo "| dry run | \`${{ inputs.dry_run }}\` |"
+            echo "| GitHub Release | \`${{ inputs.create_release }}\` |"
+            echo "| commit | \`${{ github.sha }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # package.json is committed as 0.0.0; the input is the source of truth.
+      - name: Set package version
+        run: pnpm pkg set version="${{ steps.meta.outputs.version }}"
+
+      # `files: ["dist"]` and there is no prepack hook, so this must be explicit
+      # or the tarball ships no code.
       - name: Build
         run: pnpm run build
 
-      - name: Create Release Pull Request or Publish
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          publish: pnpm exec changeset publish
-          title: 'chore: version packages'
-          commit: 'chore: version packages'
-          createGithubReleases: true
+      - name: Verify tarball contents
+        run: |
+          set -euo pipefail
+          pnpm pack --pack-destination "$RUNNER_TEMP"
+          echo "--- tarball contents ---"
+          tar -tzf "$RUNNER_TEMP"/*.tgz
+
+      # --no-git-checks is required: `pnpm pkg set version` dirties the tree,
+      # which pnpm otherwise refuses to publish from.
+      - name: Publish to npm (dry run)
+        if: inputs.dry_run
+        run: pnpm publish --dry-run --no-git-checks --tag "${{ steps.meta.outputs.npm_tag }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        run: pnpm publish --no-git-checks --tag "${{ steps.meta.outputs.npm_tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        if: ${{ !inputs.dry_run && inputs.create_release }}
+        run: |
+          set -euo pipefail
+          gh release create "v${{ steps.meta.outputs.version }}" \
+            --target "$GITHUB_SHA" \
+            --title "v${{ steps.meta.outputs.version }}" \
+            --generate-notes \
+            ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '--latest' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# ---------------------------------------------------------------------------
+# PHASE 2 — converting to automatic tag-triggered publishing with OIDC
+#
+# 1. Confirm a real (non-dry-run) publish has succeeded via this workflow.
+# 2. On npmjs.com, go to
+#      https://www.npmjs.com/package/@sailpoint/ui-plugin-sdk/access
+#    and add a GitHub Actions trusted publisher:
+#      organization: sailpoint-oss
+#      repository:   ui-plugin-sdk
+#      workflow:     release.yml     <-- must match this filename exactly
+#      environment:  (leave blank)
+# 3. Bump `packageManager` in package.json to pnpm >= 10.18 — earlier 10.x
+#    passes unresolved ${VAR} placeholders from .npmrc straight through, which
+#    makes OIDC publishes fail with a 404. Avoid pnpm 11.0.8 (OIDC regression).
+# 4. Edit this workflow:
+#      - replace the `on:` block with:
+#            on:
+#              push:
+#                tags:
+#                  - 'v*.*.*'
+#      - add `id-token: write` to the job's `permissions:`
+#      - delete `registry-url:` from the setup-node step (the .npmrc it writes
+#        is what breaks OIDC; trusted publishing needs no credentials)
+#      - drop both `NODE_AUTH_TOKEN` env blocks
+#      - add `env: { NPM_CONFIG_PROVENANCE: true }` to the publish step
+#      - derive the version from `${GITHUB_REF_NAME#v}` instead of an input
+# 5. Delete the NPM_TOKEN repository secret.
+# ---------------------------------------------------------------------------
