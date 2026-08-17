@@ -39,7 +39,7 @@ jobs:
       contents: write # tag the commit + create the GitHub Release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Enable Corepack
         run: corepack enable
