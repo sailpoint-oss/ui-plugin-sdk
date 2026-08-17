@@ -52,7 +52,7 @@ jobs:
 
       # registry-url writes an .npmrc with `_authToken=${NODE_AUTH_TOKEN}`,
       # which pnpm expands from the env on the publish steps below.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
