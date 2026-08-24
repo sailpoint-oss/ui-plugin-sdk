@@ -12,6 +12,7 @@ export type {
 	PluginContext,
 	SailPointPluginSDK,
 	SailPointPluginSDKConfig,
+	SailPointWindowConfig,
 	SlotConfiguration,
 	SlotContext,
 	TenantApiUrl,
