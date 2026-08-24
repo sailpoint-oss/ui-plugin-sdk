@@ -175,3 +175,25 @@ export interface SailPointPluginSDK {
 		onTokenUpdate(callback: (newToken: string) => void): () => void;
 	};
 }
+
+/**
+ * Runtime configuration exposed on {@link Window.sailpointConfig} for typed API
+ * clients such as `sailpoint-api-client`. Field names mirror generated client
+ * configuration keys (`baseurl`, `nermBaseurl`) rather than SDK camelCase.
+ */
+export interface SailPointWindowConfig {
+	baseurl: string;
+	/** Reserved for NERM API partitions; omitted until App Shell provides a source. */
+	nermBaseurl?: string;
+	accessToken: string;
+}
+
+declare global {
+	interface Window {
+		/**
+		 * Async provider registered by `@sailpoint/ui-plugin-sdk` after COIP handshake.
+		 * Undefined before handshake completes.
+		 */
+		sailpointConfig?: () => Promise<SailPointWindowConfig>;
+	}
+}
