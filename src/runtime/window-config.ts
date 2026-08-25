@@ -22,7 +22,7 @@ export const registerWindowSailpointConfig = (source: WindowSailpointConfigSourc
 
 		return {
 			baseurl: stripTrailingSlashes(context.tenant.apiUrl.idn),
-			accessToken: await source.getToken()
+			accessToken: await source.getToken(true)
 		};
 	};
 };
