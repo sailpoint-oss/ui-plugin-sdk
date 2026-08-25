@@ -50,6 +50,15 @@ const CONTEXT: PluginContext = {
 	}
 };
 
+const requireSailpointConfig = (): NonNullable<Window['sailpointConfig']> => {
+	const sailpointConfig = window.sailpointConfig;
+	if (!sailpointConfig) {
+		throw new Error('Expected window.sailpointConfig to be registered.');
+	}
+
+	return sailpointConfig;
+};
+
 describe('window.sailpointConfig', () => {
 	beforeEach(() => {
 		delete window.sailpointConfig;
@@ -79,7 +88,7 @@ describe('window.sailpointConfig', () => {
 			await sdk.getContext();
 
 			expect(window.sailpointConfig).toBeDefined();
-			await expect(window.sailpointConfig!()).resolves.toEqual({
+			await expect(requireSailpointConfig()()).resolves.toEqual({
 				baseurl: 'https://acme.api.identitynow.com',
 				accessToken: 'handshake-token'
 			} satisfies SailPointWindowConfig);
@@ -103,7 +112,7 @@ describe('window.sailpointConfig', () => {
 
 			await sdk.getContext();
 
-			const config = await window.sailpointConfig!();
+			const config = await requireSailpointConfig()();
 
 			expect(config.baseurl).toBe('https://acme.api.identitynow.com');
 			expect(config).not.toHaveProperty('nermBaseurl');
@@ -126,13 +135,13 @@ describe('window.sailpointConfig', () => {
 			});
 
 			await sdk.getContext();
-			await expect(window.sailpointConfig!()).resolves.toMatchObject({
+			await expect(requireSailpointConfig()()).resolves.toMatchObject({
 				accessToken: 'initial-token'
 			});
 
 			appShell.emitTokenUpdate('rotated-token');
 
-			await expect(window.sailpointConfig!()).resolves.toMatchObject({
+			await expect(requireSailpointConfig()()).resolves.toMatchObject({
 				baseurl: 'https://acme.api.identitynow.com',
 				accessToken: 'rotated-token'
 			});
@@ -170,7 +179,7 @@ describe('window.sailpointConfig', () => {
 			});
 			await firstSdk.getContext();
 
-			await expect(window.sailpointConfig!()).resolves.toMatchObject({
+			await expect(requireSailpointConfig()()).resolves.toMatchObject({
 				baseurl: 'https://first.api.identitynow.com',
 				accessToken: 'first-token'
 			});
@@ -191,7 +200,7 @@ describe('window.sailpointConfig', () => {
 			});
 			await secondSdk.getContext();
 
-			await expect(window.sailpointConfig!()).resolves.toEqual({
+			await expect(requireSailpointConfig()()).resolves.toEqual({
 				baseurl: 'https://second.api.identitynow.com',
 				accessToken: 'second-token'
 			});
