@@ -15,6 +15,7 @@ import type {
 } from '../public/types';
 import { RuntimeEngine, RuntimeEngineError } from './engine';
 import { isRecord } from './engine.utils';
+import { registerWindowSailpointConfig } from './window-config';
 
 interface CoipTokenData {
 	accessToken: string;
@@ -336,6 +337,7 @@ export class InternalSailPointPluginSDK {
 		}
 
 		this.initialized = true;
+		registerWindowSailpointConfig(this);
 	}
 
 	public async getContext(): Promise<PluginContext> {
