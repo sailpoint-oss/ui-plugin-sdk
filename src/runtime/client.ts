@@ -5,6 +5,7 @@ import type {
 	PageContext,
 	PluginConfiguration,
 	PluginContext,
+	RouteChangePayload,
 	SailPointPluginSDKConfig,
 	SlotContext,
 	TenantContext,
@@ -241,6 +242,10 @@ export class InternalSailPointPluginSDK {
 			})
 	};
 
+	public readonly navigation = {
+		setRoute: (subPath: string): Promise<void> => this.setRoute(subPath)
+	};
+
 	public constructor(config: InternalSailPointPluginSDKConfig) {
 		const targetWindow = config.parentWindow ?? config.targetWindow ?? defaultParentWindow();
 		this.engine = new RuntimeEngine({
@@ -352,6 +357,26 @@ export class InternalSailPointPluginSDK {
 		return this.pluginContext;
 	}
 
+	/**
+	 * Reports the plugin's internal route to App Shell.
+	 *
+	 * The type check runs before the handshake so a bad call never starts one.
+	 * Emitting only after the handshake matters: App Shell rejects route events
+	 * received during its READY wait. One leading `/` is stripped because App
+	 * Shell rejects absolute sub-paths, and router `location.pathname` values
+	 * always carry one.
+	 */
+	public async setRoute(subPath: unknown): Promise<void> {
+		if (typeof subPath !== 'string') {
+			throw new TypeError('navigation.setRoute expects subPath to be a string.');
+		}
+
+		await this.initialize();
+		this.emitRouteChange({
+			subPath: subPath.startsWith('/') ? subPath.slice(1) : subPath
+		});
+	}
+
 	public async getToken(forceRefresh = false): Promise<string> {
 		await this.initialize();
 		if (!forceRefresh && this.currentToken && !this.isTokenExpired(this.currentToken)) {
@@ -421,6 +446,10 @@ export class InternalSailPointPluginSDK {
 
 	public emitViewportUpdate(payload: ViewportUpdatePayload): void {
 		this.engine.emitEvent(MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT, payload);
+	}
+
+	public emitRouteChange(payload: RouteChangePayload): void {
+		this.engine.emitEvent(MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT, payload);
 	}
 
 	public async getCurrentToken(): Promise<string> {

@@ -383,4 +383,67 @@ describe('saas-sp-renderer contract compatibility', () => {
 			}
 		});
 	});
+
+	/**
+	 * Pinned to saas-sp-renderer `d283d69c` (CSTM-525): App Shell reads
+	 * `payload.subPath` from `RouteChangeEvtPayload` in
+	 * `plugin-post-handshake-messages.ts`, only after the handshake completes.
+	 */
+	it('emits SP_ROUTE_CHANGE_EVT matching App Shell RouteChangeEvtPayload after the handshake', async () => {
+		const sourceWindow = new ContractSourceWindow();
+		const appShell = new ContractAppShell();
+
+		appShell.onMessage = message => {
+			if (message.type === MESSAGE_TYPES.SP_PLUGIN_READY_REQ) {
+				queueMicrotask(() => {
+					sourceWindow.emit(
+						appShellEnvelope(MESSAGE_TYPES.SP_PLUGIN_READY_RES, message.requestId as string, {
+							protocolVersion: COIP_PROTOCOL_VERSION
+						})
+					);
+					queueMicrotask(() => {
+						sourceWindow.emit(
+							appShellEnvelope(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'token-delivery-1', {
+								token: { accessToken: 'app-shell-token', refreshInterval: 300 }
+							})
+						);
+					});
+				});
+				return;
+			}
+
+			if (message.type === MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES) {
+				queueMicrotask(() => {
+					sourceWindow.emit(
+						appShellEnvelope(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'plugin-init-1', APP_SHELL_INIT_PAYLOAD)
+					);
+				});
+			}
+		};
+
+		const sdk = createSDK({
+			targetOrigin: APP_SHELL_ORIGIN,
+			parentWindow: appShell,
+			sourceWindow,
+			now: () => NOW,
+			requestTimeoutMs: 500
+		});
+
+		await sdk.navigation.setRoute('/settings/general?tab=2#top');
+
+		expect(appShell.received.map(({ message }) => message.type)).toEqual([
+			MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
+			MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES,
+			MESSAGE_TYPES.SP_PLUGIN_INIT_RES,
+			'SP_ROUTE_CHANGE_EVT'
+		]);
+		const routeChange = appShell.received[3];
+		expect(routeChange.targetOrigin).toBe(APP_SHELL_ORIGIN);
+		expect(routeChange.message).toStrictEqual({
+			type: 'SP_ROUTE_CHANGE_EVT',
+			protocolVersion: COIP_PROTOCOL_VERSION,
+			timestamp: NOW_ISO,
+			payload: { subPath: 'settings/general?tab=2#top' }
+		});
+	});
 });

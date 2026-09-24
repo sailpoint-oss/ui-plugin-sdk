@@ -5,7 +5,7 @@ import type {
 	RuntimeRequestEnvelope,
 	RuntimeResponseEnvelope
 } from '../protocol/types.js';
-import type { PluginContext, UserCapabilities, ViewportUpdatePayload } from '../public/types.js';
+import type { PluginContext, RouteChangePayload, UserCapabilities, ViewportUpdatePayload } from '../public/types.js';
 
 const DEFAULT_TARGET_ORIGIN = 'https://mock-app-shell.sailpoint.test';
 const DEFAULT_TOKEN = 'mock-sdk-token';
@@ -89,6 +89,8 @@ export interface MockSdkContextHandle {
 	readonly context: PluginContext;
 	readonly messages: readonly MockOutboundMessage[];
 	readonly targetOrigin: string;
+	/** `subPath` values the SDK sent via `navigation.setRoute`, in order, after SDK normalization. */
+	readonly routeChanges: readonly string[];
 	emitTokenUpdate(token: string): void;
 	emitViewportChange(dimensions: ViewportUpdatePayload): void;
 	restore(): void;
@@ -218,6 +220,14 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 			return [...messages];
 		},
 		targetOrigin,
+		get routeChanges(): readonly string[] {
+			return messages
+				.filter(entry => entry.targetOrigin === targetOrigin)
+				.map(entry => entry.message)
+				.filter(isEnvelope)
+				.filter(message => message.type === MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT)
+				.map(message => (message.payload as RouteChangePayload).subPath);
+		},
 		emitTokenUpdate(token: string): void {
 			currentToken = token;
 			dispatchIncoming({

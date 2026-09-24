@@ -151,6 +151,20 @@ export interface ViewportUpdatePayload {
 	height: number;
 }
 
+/**
+ * Payload of the COIP `SP_ROUTE_CHANGE_EVT` a plugin sends to App Shell.
+ *
+ * Mirrors App Shell's `RouteChangeEvtPayload` exactly.
+ */
+export interface RouteChangePayload {
+	/**
+	 * Plugin-internal route relative to `/plugin/{alias}/`, e.g.
+	 * `'settings/general'` or `'accounts?tab=2#top'`. Empty string is the plugin
+	 * home.
+	 */
+	subPath: string;
+}
+
 export interface SailPointPluginSDKConfig {
 	targetOrigin?: string;
 	parentWindow?: MessageTarget;
@@ -173,6 +187,28 @@ export interface SailPointPluginSDK {
 	events: {
 		onViewportChange(callback: (dimensions: ViewportUpdatePayload) => void): () => void;
 		onTokenUpdate(callback: (newToken: string) => void): () => void;
+	};
+	navigation: {
+		/**
+		 * Reports the plugin's current internal route so App Shell can reflect it
+		 * in the host URL. App Shell uses `history.replaceState`, so no history
+		 * entry is pushed.
+		 *
+		 * - Waits for the SDK handshake and rejects if the handshake fails.
+		 * - Rejects with `TypeError` if `subPath` is not a string.
+		 * - One leading `/` is stripped so router paths such as
+		 *   `location.pathname` work: `'/settings'` becomes `'settings'`, and
+		 *   `'/'` becomes `''` (the plugin home).
+		 * - App Shell validates the path and silently ignores invalid values:
+		 *   longer than 2048 characters, containing `..`, `%2e%2e`, `//`, `\`, or
+		 *   a scheme prefix, or resolving outside the plugin route. No response or
+		 *   error event is sent back.
+		 * - Only full-page plugin mounts apply route changes; slot mounts ignore
+		 *   them.
+		 * - Query and hash in `subPath` replace the plugin's previous ones.
+		 *   App Shell preserves its own host-owned query parameters.
+		 */
+		setRoute(subPath: string): Promise<void>;
 	};
 }
 

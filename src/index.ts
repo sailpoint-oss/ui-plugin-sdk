@@ -10,6 +10,7 @@ export type {
 	PageContext,
 	PluginConfiguration,
 	PluginContext,
+	RouteChangePayload,
 	SailPointPluginSDK,
 	SailPointPluginSDKConfig,
 	SailPointWindowConfig,

@@ -1,5 +1,11 @@
 import { createSDK } from '../src';
-import type { CapabilityFlagKey, PluginContext, UserCapabilities } from '../src';
+import type {
+	CapabilityFlagKey,
+	PluginContext,
+	RouteChangePayload,
+	SailPointPluginSDK,
+	UserCapabilities
+} from '../src';
 import { mockSdkContext } from '../src/testing';
 
 /**
@@ -119,6 +125,25 @@ describe('public context type contract', () => {
 		};
 
 		expect(labels.isOrgAdmin).toBe('Org Admin');
+	});
+
+	it('exports the navigation namespace and RouteChangePayload', async () => {
+		const appShell = mockSdkContext();
+
+		try {
+			const sdk: SailPointPluginSDK = createSDK({ targetOrigin: appShell.targetOrigin });
+			const payload: RouteChangePayload = { subPath: 'settings' };
+			const result: Promise<void> = sdk.navigation.setRoute(payload.subPath);
+			await result;
+
+			// @ts-expect-error subPath is required; the host treats a missing value as the plugin home.
+			const missing: RouteChangePayload = {};
+			expect(missing).toEqual({});
+			// @ts-expect-error setRoute only accepts a string subPath.
+			await expect(sdk.navigation.setRoute(1)).rejects.toThrow(TypeError);
+		} finally {
+			appShell.restore();
+		}
 	});
 
 	it('completes the handshake with the documented README context', async () => {

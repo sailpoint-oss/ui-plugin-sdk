@@ -3,6 +3,7 @@ import { COIP_PROTOCOL_VERSION, MESSAGE_TYPES } from '../src/protocol/constants'
 import type {
 	MessageSource,
 	MessageTarget,
+	RuntimeEventEnvelope,
 	RuntimeMessageEvent,
 	RuntimeRequestEnvelope,
 	RuntimeResponseEnvelope
@@ -597,6 +598,170 @@ describe('plugin SDK branch coverage', () => {
 
 		await initializePromise;
 	};
+
+	describe('navigation.setRoute', () => {
+		const createSdk = (
+			overrides: Partial<ConstructorParameters<typeof InternalSailPointPluginSDK>[0]> = {}
+		): {
+			sdk: InternalSailPointPluginSDK;
+			sourceWindow: FakeSourceWindow;
+			targetWindow: FakeTargetWindow;
+		} => {
+			const sourceWindow = new FakeSourceWindow();
+			const targetWindow = new FakeTargetWindow();
+			const sdk = new InternalSailPointPluginSDK({
+				sourceWindow,
+				targetWindow,
+				targetOrigin: TRUSTED_ORIGIN,
+				now: () => NOW,
+				...overrides
+			});
+			return { sdk, sourceWindow, targetWindow };
+		};
+
+		const routeEvents = (targetWindow: FakeTargetWindow): Array<{ message: unknown; targetOrigin: string }> =>
+			targetWindow.sentMessages.filter(
+				sent => (sent.message as { type?: unknown }).type === MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT
+			);
+
+		it('emits one SP_ROUTE_CHANGE_EVT with a COIP event envelope after the handshake', async () => {
+			const { sdk, sourceWindow, targetWindow } = createSdk();
+			await completeInitialization(sdk, sourceWindow, targetWindow);
+
+			await sdk.setRoute('settings/general');
+
+			const sent = routeEvents(targetWindow);
+			expect(sent).toHaveLength(1);
+			expect(sent[0].targetOrigin).toBe(TRUSTED_ORIGIN);
+			expect(sent[0].message).toStrictEqual({
+				type: MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT,
+				protocolVersion: COIP_PROTOCOL_VERSION,
+				timestamp: NOW_ISO,
+				payload: { subPath: 'settings/general' }
+			});
+		});
+
+		it('stamps a configured protocolVersion override', () => {
+			/**
+			 * Calls emitRouteChange directly: the fake host replies with the default
+			 * protocol version, so a full handshake would reject the override.
+			 */
+			const { sdk, targetWindow } = createSdk({ protocolVersion: 'v9.9' });
+
+			sdk.emitRouteChange({ subPath: 'x' });
+
+			expect(routeEvents(targetWindow)[0].message).toMatchObject({ protocolVersion: 'v9.9' });
+		});
+
+		it('waits for the handshake before emitting when called early', async () => {
+			const { sdk, sourceWindow, targetWindow } = createSdk();
+			const postSpy = jest.spyOn(targetWindow, 'postMessage');
+
+			const routePromise = sdk.setRoute('early');
+			expect((postSpy.mock.calls[0][0] as { type: string }).type).toBe(MESSAGE_TYPES.SP_PLUGIN_READY_REQ);
+			expect(routeEvents(targetWindow)).toHaveLength(0);
+
+			await completeInitialization(sdk, sourceWindow, targetWindow);
+			await routePromise;
+
+			const sentTypes = postSpy.mock.calls.map(([message]) => (message as { type: string }).type);
+			expect(sentTypes.indexOf(MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT)).toBeGreaterThan(
+				sentTypes.indexOf(MESSAGE_TYPES.SP_PLUGIN_INIT_RES)
+			);
+		});
+
+		it('shares one handshake across concurrent calls and emits in call order', async () => {
+			const { sdk, sourceWindow, targetWindow } = createSdk();
+			const postSpy = jest.spyOn(targetWindow, 'postMessage');
+
+			const first = sdk.setRoute('a');
+			const context = sdk.getContext();
+			const second = sdk.setRoute('b');
+			await completeInitialization(sdk, sourceWindow, targetWindow);
+			await Promise.all([first, context, second]);
+
+			const readyCount = postSpy.mock.calls.filter(
+				([message]) => (message as { type: string }).type === MESSAGE_TYPES.SP_PLUGIN_READY_REQ
+			).length;
+			expect(readyCount).toBe(1);
+			expect(routeEvents(targetWindow).map(sent => (sent.message as RuntimeEventEnvelope).payload)).toEqual([
+				{ subPath: 'a' },
+				{ subPath: 'b' }
+			]);
+		});
+
+		it('rejects and emits nothing when the handshake fails', async () => {
+			const { sdk, targetWindow } = createSdk({ requestTimeoutMs: 5 });
+
+			await expect(sdk.setRoute('never')).rejects.toMatchObject({
+				details: { code: 'REQUEST_TIMEOUT' }
+			});
+			expect(routeEvents(targetWindow)).toHaveLength(0);
+		});
+
+		it('rejects a non-string subPath with TypeError without starting the handshake', async () => {
+			const { sdk, targetWindow } = createSdk();
+
+			await expect(sdk.setRoute(123)).rejects.toThrow(
+				new TypeError('navigation.setRoute expects subPath to be a string.')
+			);
+			expect(targetWindow.sentMessages).toHaveLength(0);
+		});
+
+		it.each([
+			['/settings', 'settings'],
+			['/', ''],
+			['', ''],
+			['a?b=1#c', 'a?b=1#c'],
+			['//x', '/x']
+		])('normalizes %p to %p by stripping at most one leading slash', async (input, expected) => {
+			const { sdk, sourceWindow, targetWindow } = createSdk();
+			await completeInitialization(sdk, sourceWindow, targetWindow);
+
+			await sdk.setRoute(input);
+
+			expect((routeEvents(targetWindow)[0].message as RuntimeEventEnvelope).payload).toEqual({
+				subPath: expected
+			});
+		});
+
+		it('delegates the navigation convenience object to setRoute', async () => {
+			const { sdk, sourceWindow, targetWindow } = createSdk();
+			await completeInitialization(sdk, sourceWindow, targetWindow);
+
+			await sdk.navigation.setRoute('via-namespace');
+
+			expect((routeEvents(targetWindow)[0].message as RuntimeEventEnvelope).payload).toEqual({
+				subPath: 'via-namespace'
+			});
+		});
+
+		it('ignores an inbound SP_ROUTE_CHANGE_EVT from the host', async () => {
+			const { sdk, sourceWindow, targetWindow } = createSdk();
+			await completeInitialization(sdk, sourceWindow, targetWindow);
+			const onViewportChange = jest.fn();
+			sdk.events.onViewportChange(onViewportChange);
+			const sentBefore = targetWindow.sentMessages.length;
+
+			expect(() =>
+				sourceWindow.emit({
+					type: MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT,
+					payload: { subPath: 'echo' },
+					protocolVersion: COIP_PROTOCOL_VERSION,
+					timestamp: NOW_ISO
+				})
+			).not.toThrow();
+			sourceWindow.emit({
+				type: MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT,
+				payload: { width: 1, height: 2 },
+				protocolVersion: COIP_PROTOCOL_VERSION,
+				timestamp: NOW_ISO
+			});
+
+			expect(targetWindow.sentMessages).toHaveLength(sentBefore);
+			expect(onViewportChange).toHaveBeenCalledWith({ width: 1, height: 2 });
+		});
+	});
 
 	it('uses window.parent when no explicit target window is provided', () => {
 		const sourceWindow = new FakeSourceWindow();

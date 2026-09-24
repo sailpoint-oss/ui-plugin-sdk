@@ -118,6 +118,35 @@ describe('mockSdkContext', () => {
 		}
 	});
 
+	it('records normalized route changes sent to the mock origin', async () => {
+		const appShell = mockSdkContext({
+			context: CONTEXT,
+			now: () => NOW
+		});
+
+		try {
+			const sdk = createSDK({
+				targetOrigin: appShell.targetOrigin,
+				now: () => NOW
+			});
+
+			await sdk.navigation.setRoute('/x');
+			await sdk.navigation.setRoute('y');
+			window.parent.postMessage(
+				{
+					type: MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT,
+					timestamp: NOW_ISO,
+					payload: { subPath: 'foreign' }
+				},
+				'https://elsewhere.example.com'
+			);
+
+			expect(appShell.routeChanges).toEqual(['x', 'y']);
+		} finally {
+			appShell.restore();
+		}
+	});
+
 	it('records mismatched target origins without simulating a host response', async () => {
 		const appShell = mockSdkContext({
 			now: () => NOW
