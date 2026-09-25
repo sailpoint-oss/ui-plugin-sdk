@@ -77,7 +77,7 @@ const APP_SHELL_INIT_PAYLOAD = {
 		]
 	},
 	pageContext: {
-		route: 'https://acme.identitynow.com/plugin/plugin-1'
+		route: 'https://acme.identitynow.com/ui/plugin/plugin-1/settings/general?tab=2#top'
 	},
 	slotContext: {
 		id: 'slot-1'
@@ -232,7 +232,7 @@ describe('saas-sp-renderer contract compatibility', () => {
 		await expect(sdk.getContext()).resolves.toEqual({
 			tenant: contextPayload.tenantContext,
 			user: contextPayload.userContext,
-			page: contextPayload.pageContext,
+			page: { ...contextPayload.pageContext, subPath: 'settings/general' },
 			slot: contextPayload.slotContext,
 			pluginConfiguration: contextPayload.pluginConfiguration
 		});

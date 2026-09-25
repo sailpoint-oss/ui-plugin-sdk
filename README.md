@@ -102,6 +102,28 @@ router.afterEach(to => {
 This replaces hand-written
 `window.parent.postMessage({ type: 'SP_ROUTE_CHANGE_EVT', ... })` calls.
 
+To restore the right view on reload or a deep link, read the route the host
+mounted the plugin at from `page.subPath`. The SDK derives it from the App Shell
+URL (`/ui/plugin/{alias-or-pluginId}/{subPath}`), so you don't have to parse
+`page.route` yourself:
+
+```typescript
+const { page } = await sdk.getContext();
+
+// 'settings/general' for .../ui/plugin/my-plugin/settings/general; '' for the start route.
+router.navigateByUrl(`/${page.subPath}`);
+```
+
+- `subPath` holds path segments only, still percent-encoded, so
+  `setRoute(page.subPath)` is a no-op round trip. Read query and hash from
+  `new URL(page.route)`, which also contains App Shell's own parameters.
+- It reflects the URL at mount time and does not follow later `setRoute` calls.
+- It is `''` for slot mounts and for any route without a `/plugin/` segment.
+- The SDK performs no navigation. How you route to `subPath` (path or hash
+  location, suppressing the resulting `setRoute`) is up to your plugin.
+- `page.route` is unchanged. Use it when you need the full host URL, for example
+  to derive the tenant origin.
+
 ### Commands
 
 | Command | Description |
@@ -161,7 +183,7 @@ const appShell = mockSdkContext({
 			products: []
 		},
 		user: { id: 'user-1', displayName: 'Test User', email: 'test@example.com', capabilities },
-		page: { route: 'https://acme.identitynow.com/plugins/example' },
+		page: { route: 'https://acme.identitynow.com/ui/plugin/example/settings' },
 		slot: { id: 'slot-1' },
 		pluginConfiguration: { pluginId: 'plugin-1' }
 	}
@@ -187,6 +209,12 @@ leading-slash normalization:
 await sdk.navigation.setRoute('/settings');
 expect(appShell.routeChanges).toEqual(['settings']);
 ```
+
+`page.subPath` is optional in a mock context. The mock derives it from
+`page.route` the same way the SDK does, so `appShell.context` always matches
+`sdk.getContext()`. The default mock route is
+`https://mock-app-shell.sailpoint.test/ui/plugin/mock-plugin/settings`, which
+gives a `subPath` of `'settings'`.
 
 The mock has no dependency on Jest, Vitest, or another test framework.
 

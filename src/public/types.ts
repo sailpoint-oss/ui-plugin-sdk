@@ -105,8 +105,23 @@ export interface PageContext {
 	 *
 	 * The key mirrors the App Shell payload, whose name predates the value it
 	 * carries. Parse it with `new URL(...)` rather than matching it as a path.
+	 * Kept alongside {@link PageContext.subPath} for deriving the tenant origin.
 	 */
 	route: string;
+	/**
+	 * The plugin-relative route the host mounted this instance at, derived by
+	 * the SDK from `route`, e.g. `'settings/general'` for
+	 * `https://acme.identitynow.com/ui/plugin/my-plugin/settings/general`.
+	 * `''` for the start route, for slot mounts, and for any route without a
+	 * `/plugin/` segment.
+	 *
+	 * - Path segments only, still percent-encoded, so the value can be passed to
+	 *   `navigation.setRoute` unchanged. Read query and hash from `route`.
+	 * - Reflects the URL at mount time; it does not follow later
+	 *   `navigation.setRoute` calls.
+	 * - The SDK performs no navigation. Routing to it is up to the plugin.
+	 */
+	subPath: string;
 }
 
 export interface SlotContext {

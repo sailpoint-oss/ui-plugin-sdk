@@ -16,6 +16,7 @@ import type {
 } from '../public/types';
 import { RuntimeEngine, RuntimeEngineError } from './engine';
 import { isRecord } from './engine.utils';
+import { extractSubPath } from './page-route';
 import { registerWindowSailpointConfig } from './window-config';
 
 interface CoipTokenData {
@@ -142,7 +143,11 @@ const isUserContext = (value: unknown): value is UserContext => {
 	);
 };
 
-const isPageContext = (value: unknown): value is PageContext => {
+/**
+ * Validates the host page slice. `subPath` is SDK-derived, not host-sent, so
+ * only `route` is required here.
+ */
+const isHostPageContext = (value: unknown): value is Omit<PageContext, 'subPath'> => {
 	return isRecord(value) && hasStringField(value, 'route');
 };
 
@@ -201,7 +206,7 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 	if (
 		!isTenantContext(tenant) ||
 		!isUserContext(user) ||
-		!isPageContext(page) ||
+		!isHostPageContext(page) ||
 		!isPluginConfiguration(context.pluginConfiguration)
 	) {
 		return null;
@@ -210,7 +215,10 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 	return {
 		tenant,
 		user,
-		page,
+		page: {
+			...page,
+			subPath: extractSubPath(page.route)
+		},
 		slot: slot as SlotContext,
 		pluginConfiguration: context.pluginConfiguration
 	};

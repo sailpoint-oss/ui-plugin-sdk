@@ -7,6 +7,7 @@ import type {
 	UserCapabilities
 } from '../src';
 import { mockSdkContext } from '../src/testing';
+import type { MockPluginContext } from '../src/testing';
 
 /**
  * Compile-time contract tests.
@@ -36,7 +37,7 @@ const CAPABILITIES: UserCapabilities = {
  * The README's "Testing Plugins Offline" context literal, verbatim. Compiling it
  * here is what keeps the documented example honest as the shapes tighten.
  */
-const README_CONTEXT: PluginContext = {
+const README_CONTEXT: MockPluginContext = {
 	tenant: {
 		id: 'tenant-1',
 		scriptName: 'acme',
@@ -48,7 +49,7 @@ const README_CONTEXT: PluginContext = {
 		products: []
 	},
 	user: { id: 'user-1', displayName: 'Test User', email: 'test@example.com', capabilities: CAPABILITIES },
-	page: { route: 'https://acme.identitynow.com/plugins/example' },
+	page: { route: 'https://acme.identitynow.com/ui/plugin/example/settings' },
 	slot: { id: 'slot-1' },
 	pluginConfiguration: { pluginId: 'plugin-1' }
 };
@@ -80,7 +81,7 @@ describe('public context type contract', () => {
 	});
 
 	it('exposes product licenses without a cast', () => {
-		const context: PluginContext = {
+		const context: MockPluginContext = {
 			...README_CONTEXT,
 			tenant: {
 				...README_CONTEXT.tenant,
@@ -127,6 +128,17 @@ describe('public context type contract', () => {
 		expect(labels.isOrgAdmin).toBe('Org Admin');
 	});
 
+	it('requires page.subPath on PluginContext but not on mock input', () => {
+		const route = 'https://acme.identitynow.com/ui/plugin/example';
+		const subPath: string = README_CONTEXT.page.subPath ?? '';
+		const mockInput: MockPluginContext = { ...README_CONTEXT, page: { route } };
+
+		// @ts-expect-error subPath is always present on resolved context; only mock input may omit it.
+		const resolved: PluginContext = { ...README_CONTEXT, page: { route } };
+
+		expect([subPath, mockInput.page.route, resolved.page.route]).toEqual(['', route, route]);
+	});
+
 	it('exports the navigation namespace and RouteChangePayload', async () => {
 		const appShell = mockSdkContext();
 
@@ -152,7 +164,8 @@ describe('public context type contract', () => {
 		try {
 			const sdk = createSDK({ targetOrigin: appShell.targetOrigin });
 
-			await expect(sdk.getContext()).resolves.toEqual(README_CONTEXT);
+			await expect(sdk.getContext()).resolves.toEqual(appShell.context);
+			expect(appShell.context.page.subPath).toBe('settings');
 		} finally {
 			appShell.restore();
 		}

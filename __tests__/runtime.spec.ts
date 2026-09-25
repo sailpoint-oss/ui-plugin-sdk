@@ -401,7 +401,7 @@ describe('PluginRuntimeClient', () => {
 		await expect(client.getContext()).resolves.toEqual({
 			tenant: appShellContextPayload.tenantContext,
 			user: appShellContextPayload.userContext,
-			page: appShellContextPayload.pageContext,
+			page: { ...appShellContextPayload.pageContext, subPath: '' },
 			slot: appShellContextPayload.slotContext,
 			pluginConfiguration: appShellContextPayload.pluginConfiguration
 		});

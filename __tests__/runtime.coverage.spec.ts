@@ -11,6 +11,7 @@ import type {
 import { InternalSailPointPluginSDK, PluginRuntimeClient } from '../src/runtime/client';
 import { RuntimeEngine, RuntimeEngineError } from '../src/runtime/engine';
 import { RuntimeHandshake } from '../src/runtime/handshake';
+import { extractSubPath } from '../src/runtime/page-route';
 import { isEventType, isRequestType, isResponseType, validateEnvelope, validateOrigin } from '../src/runtime/validator';
 
 /**
@@ -556,6 +557,38 @@ describe('engine and client branch coverage', () => {
 	});
 });
 
+describe('extractSubPath', () => {
+	const HOST = 'https://acme.identitynow.com';
+
+	it.each([
+		['start route (alias)', `${HOST}/ui/plugin/my-plugin`, ''],
+		['start route with trailing slash', `${HOST}/ui/plugin/my-plugin/`, ''],
+		['one level', `${HOST}/ui/plugin/my-plugin/settings`, 'settings'],
+		['multi level', `${HOST}/ui/plugin/my-plugin/settings/general/advanced`, 'settings/general/advanced'],
+		[
+			'full-page mount by pluginId UUID',
+			`${HOST}/ui/plugin/3f2c1a9e-8b7d-4c6e-9f10-2a3b4c5d6e7f/settings`,
+			'settings'
+		],
+		[
+			'dev alias query is not part of the path',
+			`${HOST}/ui/plugin/my-plugin/settings?spPluginDev=my-plugin`,
+			'settings'
+		],
+		['query and hash excluded', `${HOST}/ui/plugin/my-plugin/accounts?tab=2#top`, 'accounts'],
+		['percent-encoding preserved', `${HOST}/ui/plugin/my-plugin/a%20b`, 'a%20b'],
+		['doubled slashes collapsed', `${HOST}/ui/plugin/my-plugin//x///y`, 'x/y'],
+		['plugin segment without a route key', `${HOST}/ui/plugin`, ''],
+		['no app shell prefix', `${HOST}/plugin/my-plugin/settings`, 'settings'],
+		['plugin-less host page (slot mount)', `${HOST}/ui/a/admin/identities`, ''],
+		['plural plugins is not the plugin segment', `${HOST}/plugins/example`, ''],
+		['malformed href', 'not a url', ''],
+		['empty string', '', '']
+	])('%s', (_label, route, expected) => {
+		expect(extractSubPath(route)).toBe(expected);
+	});
+});
+
 describe('plugin SDK branch coverage', () => {
 	const completeInitialization = async (
 		sdk: InternalSailPointPluginSDK,
@@ -598,6 +631,59 @@ describe('plugin SDK branch coverage', () => {
 
 		await initializePromise;
 	};
+
+	describe('page.subPath', () => {
+		const initPayloadWithRoute = (route: string): Record<string, unknown> => ({
+			pluginConfiguration: { pluginId: '3f2c1a9e-8b7d-4c6e-9f10-2a3b4c5d6e7f' },
+			tenant: TENANT_FIXTURE,
+			user: USER_FIXTURE,
+			page: { route },
+			slot: {}
+		});
+
+		it('derives subPath from the host route and leaves route unchanged', async () => {
+			const route = 'https://acme.identitynow.com/ui/plugin/my-plugin/settings/general?tab=2#top';
+			const sourceWindow = new FakeSourceWindow();
+			const targetWindow = new FakeTargetWindow();
+			const sdk = new InternalSailPointPluginSDK({
+				sourceWindow,
+				targetWindow,
+				targetOrigin: TRUSTED_ORIGIN,
+				now: () => NOW
+			});
+			await completeInitialization(sdk, sourceWindow, targetWindow, 'cached-token', initPayloadWithRoute(route));
+
+			const context = await sdk.getContext();
+
+			expect(context.page).toEqual({ route, subPath: 'settings/general' });
+		});
+
+		it('round-trips through navigation.setRoute unchanged', async () => {
+			const sourceWindow = new FakeSourceWindow();
+			const targetWindow = new FakeTargetWindow();
+			const sdk = new InternalSailPointPluginSDK({
+				sourceWindow,
+				targetWindow,
+				targetOrigin: TRUSTED_ORIGIN,
+				now: () => NOW
+			});
+			await completeInitialization(
+				sdk,
+				sourceWindow,
+				targetWindow,
+				'cached-token',
+				initPayloadWithRoute('https://acme.identitynow.com/ui/plugin/my-plugin/a%20b/c')
+			);
+
+			await sdk.setRoute((await sdk.getContext()).page.subPath);
+
+			const routeChange = findMessageByType<RuntimeEventEnvelope>(
+				targetWindow,
+				MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT
+			);
+			expect(routeChange.payload).toEqual({ subPath: 'a%20b/c' });
+		});
+	});
 
 	describe('navigation.setRoute', () => {
 		const createSdk = (
