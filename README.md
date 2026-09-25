@@ -67,6 +67,63 @@ try {
 Treat `body` as untrusted API data and avoid logging it without reviewing it for
 sensitive content.
 
+### Syncing Routes with App Shell
+
+Full-page plugins with internal routing can report their current route so the
+App Shell URL reflects it. Deep links, reloads, and shared URLs then land on the
+same plugin sub-page. Call `navigation.setRoute` whenever the plugin's router
+navigates:
+
+```typescript
+import { createSDK } from '@sailpoint/ui-plugin-sdk';
+
+const sdk = createSDK();
+
+router.afterEach(to => {
+	void sdk.navigation.setRoute(to.fullPath);
+});
+```
+
+- `subPath` is relative to `/plugin/{alias}/`. One leading `/` is stripped, so
+  router paths such as `location.pathname` work as-is. `''` or `'/'` is the
+  plugin home.
+- Query and hash in `subPath` replace the plugin's previous ones. App Shell
+  preserves its own host-owned query parameters.
+- App Shell updates its URL with `history.replaceState`, so no browser history
+  entry is added.
+- The promise resolves once the event is sent. It waits for the SDK handshake
+  and rejects if the handshake fails, or with `TypeError` if `subPath` is not a
+  string.
+- App Shell validates the path and **silently ignores** values it rejects:
+  longer than 2048 characters, containing `..`, `%2e%2e`, `//`, `\`, or a scheme
+  prefix, or resolving outside the plugin route. No error is sent back.
+- Only full-page plugin mounts apply route changes. Slot mounts ignore them.
+
+This replaces hand-written
+`window.parent.postMessage({ type: 'SP_ROUTE_CHANGE_EVT', ... })` calls.
+
+To restore the right view on reload or a deep link, read the route the host
+mounted the plugin at from `page.subPath`. The SDK derives it from the App Shell
+URL (`/ui/plugin/{alias-or-pluginId}/{subPath}`), so you don't have to parse
+`page.route` yourself:
+
+```typescript
+const { page } = await sdk.getContext();
+
+// 'settings/general' for .../ui/plugin/my-plugin/settings/general; '' for the start route.
+router.navigateByUrl(`/${page.subPath}`);
+```
+
+- `subPath` holds path segments only, still percent-encoded, so
+  `setRoute(page.subPath)` is a no-op round trip. Read query and hash from
+  `new URL(page.route)`, which also contains App Shell's own parameters.
+- It reflects the URL at mount time and does not follow later `setRoute` calls.
+- It is `''` for slot mounts and for any route without a `/plugin/` segment.
+- The SDK performs no navigation. How you route to `subPath` (path or hash
+  location, suppressing the resulting `setRoute`) is up to your plugin.
+- `page.route` is unchanged. Use it when you need the full host URL, for example
+  to derive the tenant origin.
+
 ### Commands
 
 | Command | Description |
@@ -126,7 +183,7 @@ const appShell = mockSdkContext({
 			products: []
 		},
 		user: { id: 'user-1', displayName: 'Test User', email: 'test@example.com', capabilities },
-		page: { route: 'https://acme.identitynow.com/plugins/example' },
+		page: { route: 'https://acme.identitynow.com/ui/plugin/example/settings' },
 		slot: { id: 'slot-1' },
 		pluginConfiguration: { pluginId: 'plugin-1' }
 	}
@@ -144,8 +201,22 @@ appShell.restore();
 ```
 
 The mock also supports `emitTokenUpdate()`, responds to forced token refreshes,
-and exposes recorded outbound messages for protocol assertions. It has no
-dependency on Jest, Vitest, or another test framework.
+and exposes recorded outbound messages for protocol assertions. `routeChanges`
+lists the `subPath` values sent through `navigation.setRoute`, in order and after
+leading-slash normalization:
+
+```typescript
+await sdk.navigation.setRoute('/settings');
+expect(appShell.routeChanges).toEqual(['settings']);
+```
+
+`page.subPath` is optional in a mock context. The mock derives it from
+`page.route` the same way the SDK does, so `appShell.context` always matches
+`sdk.getContext()`. The default mock route is
+`https://mock-app-shell.sailpoint.test/ui/plugin/mock-plugin/settings`, which
+gives a `subPath` of `'settings'`.
+
+The mock has no dependency on Jest, Vitest, or another test framework.
 
 ## Contributing
 

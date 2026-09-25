@@ -5,7 +5,14 @@ import type {
 	RuntimeRequestEnvelope,
 	RuntimeResponseEnvelope
 } from '../protocol/types.js';
-import type { PluginContext, UserCapabilities, ViewportUpdatePayload } from '../public/types.js';
+import type {
+	PageContext,
+	PluginContext,
+	RouteChangePayload,
+	UserCapabilities,
+	ViewportUpdatePayload
+} from '../public/types.js';
+import { extractSubPath } from '../runtime/page-route.js';
 
 const DEFAULT_TARGET_ORIGIN = 'https://mock-app-shell.sailpoint.test';
 const DEFAULT_TOKEN = 'mock-sdk-token';
@@ -33,7 +40,7 @@ const DEFAULT_CAPABILITIES: UserCapabilities = {
 	isSaasManagementReader: false
 };
 
-const DEFAULT_CONTEXT: PluginContext = {
+const DEFAULT_CONTEXT: MockPluginContext = {
 	tenant: {
 		id: 'mock-tenant',
 		scriptName: 'mock-tenant',
@@ -53,7 +60,12 @@ const DEFAULT_CONTEXT: PluginContext = {
 		capabilities: DEFAULT_CAPABILITIES
 	},
 	page: {
-		route: 'https://mock-app-shell.sailpoint.test/'
+		/**
+		 * Mirrors the App Shell full-page shape `/ui/plugin/{alias}/{subPath}`
+		 * (saas-sp-renderer `plugin-route-sync.ts`), so a default mock exercises
+		 * the sub-path parser the way production does.
+		 */
+		route: 'https://mock-app-shell.sailpoint.test/ui/plugin/mock-plugin/settings'
 	},
 	slot: {},
 	pluginConfiguration: {
@@ -66,12 +78,21 @@ const DEFAULT_CONTEXT: PluginContext = {
 	}
 };
 
+/**
+ * Plugin context as a test supplies it. `page.subPath` is optional because the
+ * SDK derives it from `page.route`; a supplied value is ignored, so the
+ * handle's `context` always matches what `sdk.getContext()` resolves to.
+ */
+export type MockPluginContext = Omit<PluginContext, 'page'> & {
+	page: Omit<PageContext, 'subPath'> & Partial<Pick<PageContext, 'subPath'>>;
+};
+
 interface MockSourceWindow {
 	dispatchEvent(event: Event): boolean;
 }
 
 export interface MockSdkContextOptions {
-	context?: PluginContext;
+	context?: MockPluginContext;
 	token?: string;
 	targetOrigin?: string;
 	protocolVersion?: string;
@@ -89,6 +110,8 @@ export interface MockSdkContextHandle {
 	readonly context: PluginContext;
 	readonly messages: readonly MockOutboundMessage[];
 	readonly targetOrigin: string;
+	/** `subPath` values the SDK sent via `navigation.setRoute`, in order, after SDK normalization. */
+	readonly routeChanges: readonly string[];
 	emitTokenUpdate(token: string): void;
 	emitViewportChange(dimensions: ViewportUpdatePayload): void;
 	restore(): void;
@@ -118,7 +141,14 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 	const protocolVersion = options.protocolVersion ?? COIP_PROTOCOL_VERSION;
 	const now = options.now ?? (() => Date.now());
 	const timestamp = (): string => new Date(now()).toISOString();
-	const context = options.context ?? DEFAULT_CONTEXT;
+	const suppliedContext = options.context ?? DEFAULT_CONTEXT;
+	const context: PluginContext = {
+		...suppliedContext,
+		page: {
+			...suppliedContext.page,
+			subPath: extractSubPath(suppliedContext.page.route)
+		}
+	};
 	const messages: MockOutboundMessage[] = [];
 	const originalPostMessage = parentWindow.postMessage;
 	let currentToken = options.token ?? DEFAULT_TOKEN;
@@ -194,7 +224,7 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 				break;
 			case MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES:
 				enqueue(() => {
-					dispatchRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, context);
+					dispatchRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, suppliedContext);
 				});
 				break;
 			case MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ:
@@ -218,6 +248,14 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 			return [...messages];
 		},
 		targetOrigin,
+		get routeChanges(): readonly string[] {
+			return messages
+				.filter(entry => entry.targetOrigin === targetOrigin)
+				.map(entry => entry.message)
+				.filter(isEnvelope)
+				.filter(message => message.type === MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT)
+				.map(message => (message.payload as RouteChangePayload).subPath);
+		},
 		emitTokenUpdate(token: string): void {
 			currentToken = token;
 			dispatchIncoming({
