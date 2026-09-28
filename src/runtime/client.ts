@@ -5,6 +5,7 @@ import type {
 	PageContext,
 	PluginConfiguration,
 	PluginContext,
+	RouteChangePayload,
 	SailPointPluginSDKConfig,
 	SlotContext,
 	TenantContext,
@@ -15,6 +16,7 @@ import type {
 } from '../public/types';
 import { RuntimeEngine, RuntimeEngineError } from './engine';
 import { isRecord } from './engine.utils';
+import { extractSubPath } from './page-route';
 import { registerWindowSailpointConfig } from './window-config';
 
 interface CoipTokenData {
@@ -141,7 +143,11 @@ const isUserContext = (value: unknown): value is UserContext => {
 	);
 };
 
-const isPageContext = (value: unknown): value is PageContext => {
+/**
+ * Validates the host page slice. `subPath` is SDK-derived, not host-sent, so
+ * only `route` is required here.
+ */
+const isHostPageContext = (value: unknown): value is Omit<PageContext, 'subPath'> => {
 	return isRecord(value) && hasStringField(value, 'route');
 };
 
@@ -200,7 +206,7 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 	if (
 		!isTenantContext(tenant) ||
 		!isUserContext(user) ||
-		!isPageContext(page) ||
+		!isHostPageContext(page) ||
 		!isPluginConfiguration(context.pluginConfiguration)
 	) {
 		return null;
@@ -209,7 +215,10 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 	return {
 		tenant,
 		user,
-		page,
+		page: {
+			...page,
+			subPath: extractSubPath(page.route)
+		},
 		slot: slot as SlotContext,
 		pluginConfiguration: context.pluginConfiguration
 	};
@@ -239,6 +248,10 @@ export class InternalSailPointPluginSDK {
 			this.onTokenUpdate(payload => {
 				callback(payload.token);
 			})
+	};
+
+	public readonly navigation = {
+		setRoute: (subPath: string): Promise<void> => this.setRoute(subPath)
 	};
 
 	public constructor(config: InternalSailPointPluginSDKConfig) {
@@ -352,6 +365,26 @@ export class InternalSailPointPluginSDK {
 		return this.pluginContext;
 	}
 
+	/**
+	 * Reports the plugin's internal route to App Shell.
+	 *
+	 * The type check runs before the handshake so a bad call never starts one.
+	 * Emitting only after the handshake matters: App Shell rejects route events
+	 * received during its READY wait. One leading `/` is stripped because App
+	 * Shell rejects absolute sub-paths, and router `location.pathname` values
+	 * always carry one.
+	 */
+	public async setRoute(subPath: unknown): Promise<void> {
+		if (typeof subPath !== 'string') {
+			throw new TypeError('navigation.setRoute expects subPath to be a string.');
+		}
+
+		await this.initialize();
+		this.emitRouteChange({
+			subPath: subPath.startsWith('/') ? subPath.slice(1) : subPath
+		});
+	}
+
 	public async getToken(forceRefresh = false): Promise<string> {
 		await this.initialize();
 		if (!forceRefresh && this.currentToken && !this.isTokenExpired(this.currentToken)) {
@@ -421,6 +454,10 @@ export class InternalSailPointPluginSDK {
 
 	public emitViewportUpdate(payload: ViewportUpdatePayload): void {
 		this.engine.emitEvent(MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT, payload);
+	}
+
+	public emitRouteChange(payload: RouteChangePayload): void {
+		this.engine.emitEvent(MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT, payload);
 	}
 
 	public async getCurrentToken(): Promise<string> {

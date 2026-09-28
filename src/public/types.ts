@@ -105,8 +105,23 @@ export interface PageContext {
 	 *
 	 * The key mirrors the App Shell payload, whose name predates the value it
 	 * carries. Parse it with `new URL(...)` rather than matching it as a path.
+	 * Kept alongside {@link PageContext.subPath} for deriving the tenant origin.
 	 */
 	route: string;
+	/**
+	 * The plugin-relative route the host mounted this instance at, derived by
+	 * the SDK from `route`, e.g. `'settings/general'` for
+	 * `https://acme.identitynow.com/ui/plugin/my-plugin/settings/general`.
+	 * `''` for the start route, for slot mounts, and for any route without a
+	 * `/plugin/` segment.
+	 *
+	 * - Path segments only, still percent-encoded, so the value can be passed to
+	 *   `navigation.setRoute` unchanged. Read query and hash from `route`.
+	 * - Reflects the URL at mount time; it does not follow later
+	 *   `navigation.setRoute` calls.
+	 * - The SDK performs no navigation. Routing to it is up to the plugin.
+	 */
+	subPath: string;
 }
 
 export interface SlotContext {
@@ -151,6 +166,20 @@ export interface ViewportUpdatePayload {
 	height: number;
 }
 
+/**
+ * Payload of the COIP `SP_ROUTE_CHANGE_EVT` a plugin sends to App Shell.
+ *
+ * Mirrors App Shell's `RouteChangeEvtPayload` exactly.
+ */
+export interface RouteChangePayload {
+	/**
+	 * Plugin-internal route relative to `/plugin/{alias}/`, e.g.
+	 * `'settings/general'` or `'accounts?tab=2#top'`. Empty string is the plugin
+	 * home.
+	 */
+	subPath: string;
+}
+
 export interface SailPointPluginSDKConfig {
 	targetOrigin?: string;
 	parentWindow?: MessageTarget;
@@ -173,6 +202,28 @@ export interface SailPointPluginSDK {
 	events: {
 		onViewportChange(callback: (dimensions: ViewportUpdatePayload) => void): () => void;
 		onTokenUpdate(callback: (newToken: string) => void): () => void;
+	};
+	navigation: {
+		/**
+		 * Reports the plugin's current internal route so App Shell can reflect it
+		 * in the host URL. App Shell uses `history.replaceState`, so no history
+		 * entry is pushed.
+		 *
+		 * - Waits for the SDK handshake and rejects if the handshake fails.
+		 * - Rejects with `TypeError` if `subPath` is not a string.
+		 * - One leading `/` is stripped so router paths such as
+		 *   `location.pathname` work: `'/settings'` becomes `'settings'`, and
+		 *   `'/'` becomes `''` (the plugin home).
+		 * - App Shell validates the path and silently ignores invalid values:
+		 *   longer than 2048 characters, containing `..`, `%2e%2e`, `//`, `\`, or
+		 *   a scheme prefix, or resolving outside the plugin route. No response or
+		 *   error event is sent back.
+		 * - Only full-page plugin mounts apply route changes; slot mounts ignore
+		 *   them.
+		 * - Query and hash in `subPath` replace the plugin's previous ones.
+		 *   App Shell preserves its own host-owned query parameters.
+		 */
+		setRoute(subPath: string): Promise<void>;
 	};
 }
 

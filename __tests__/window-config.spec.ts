@@ -40,7 +40,8 @@ const CONTEXT: PluginContext = {
 		capabilities: CAPABILITIES
 	},
 	page: {
-		route: 'https://acme.identitynow.com/plugins/example'
+		route: 'https://acme.identitynow.com/ui/plugin/example/settings',
+		subPath: 'settings'
 	},
 	slot: {
 		id: 'slot-1'

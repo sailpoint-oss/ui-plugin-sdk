@@ -40,7 +40,8 @@ const CONTEXT: PluginContext = {
 		capabilities: CAPABILITIES
 	},
 	page: {
-		route: 'https://acme.identitynow.com/plugins/accounts'
+		route: 'https://acme.identitynow.com/ui/plugin/accounts-plugin/accounts',
+		subPath: 'accounts'
 	},
 	slot: {
 		id: 'slot-1'
@@ -113,6 +114,70 @@ describe('mockSdkContext', () => {
 					({ message }) => (message as { type?: string }).type === MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ
 				)
 			).toBe(true);
+		} finally {
+			appShell.restore();
+		}
+	});
+
+	it('defaults to a representative full-page route and derives its subPath', async () => {
+		const appShell = mockSdkContext({ now: () => NOW });
+
+		try {
+			const sdk = createSDK({ targetOrigin: appShell.targetOrigin, now: () => NOW });
+
+			expect(appShell.context.page).toEqual({
+				route: 'https://mock-app-shell.sailpoint.test/ui/plugin/mock-plugin/settings',
+				subPath: 'settings'
+			});
+			await expect(sdk.getContext()).resolves.toEqual(appShell.context);
+		} finally {
+			appShell.restore();
+		}
+	});
+
+	it('derives subPath from route and ignores a supplied value', async () => {
+		const appShell = mockSdkContext({
+			context: {
+				...CONTEXT,
+				page: { route: 'https://acme.identitynow.com/ui/plugin/accounts-plugin/accounts/42', subPath: 'stale' }
+			},
+			now: () => NOW
+		});
+
+		try {
+			const sdk = createSDK({ targetOrigin: appShell.targetOrigin, now: () => NOW });
+
+			expect(appShell.context.page.subPath).toBe('accounts/42');
+			await expect(sdk.getContext()).resolves.toMatchObject({ page: { subPath: 'accounts/42' } });
+		} finally {
+			appShell.restore();
+		}
+	});
+
+	it('records normalized route changes sent to the mock origin', async () => {
+		const appShell = mockSdkContext({
+			context: CONTEXT,
+			now: () => NOW
+		});
+
+		try {
+			const sdk = createSDK({
+				targetOrigin: appShell.targetOrigin,
+				now: () => NOW
+			});
+
+			await sdk.navigation.setRoute('/x');
+			await sdk.navigation.setRoute('y');
+			window.parent.postMessage(
+				{
+					type: MESSAGE_TYPES.SP_ROUTE_CHANGE_EVT,
+					timestamp: NOW_ISO,
+					payload: { subPath: 'foreign' }
+				},
+				'https://elsewhere.example.com'
+			);
+
+			expect(appShell.routeChanges).toEqual(['x', 'y']);
 		} finally {
 			appShell.restore();
 		}

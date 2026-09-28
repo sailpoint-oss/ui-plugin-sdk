@@ -21,6 +21,9 @@ export const createSDK = (config: SailPointPluginSDKConfig = {}): SailPointPlugi
 				internalSDK.onTokenUpdate(payload => {
 					callback(payload.token);
 				})
+		},
+		navigation: {
+			setRoute: (subPath: string) => internalSDK.setRoute(subPath)
 		}
 	};
 };
