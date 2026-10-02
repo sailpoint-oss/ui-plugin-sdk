@@ -225,4 +225,106 @@ describe('mockSdkContext', () => {
 
 		expect(window.parent.postMessage).toBe(originalPostMessage);
 	});
+
+	it('reports the mock host color scheme and drives theme changes without a handshake', () => {
+		const appShell = mockSdkContext({ colorScheme: 'dark', now: () => NOW });
+
+		try {
+			const sdk = createSDK({ targetOrigin: appShell.targetOrigin, now: () => NOW });
+			const onThemeChange = jest.fn();
+			sdk.events.onThemeChange(onThemeChange);
+
+			expect(sdk.theme.getColorScheme()).toBe('dark');
+			expect(document.documentElement.classList.contains('spds-dark')).toBe(true);
+
+			appShell.emitThemeChange('light');
+
+			expect(onThemeChange).toHaveBeenCalledWith({ colorScheme: 'light' });
+			expect(sdk.theme.getColorScheme()).toBe('light');
+			expect(document.documentElement.classList.contains('spds-dark')).toBe(false);
+			expect(appShell.messages).toEqual([]);
+		} finally {
+			appShell.restore();
+		}
+	});
+
+	it('answers the dark color-scheme query like a browser and removes matchMedia on restore', () => {
+		expect('matchMedia' in window).toBe(false);
+		const appShell = mockSdkContext();
+
+		try {
+			const query = window.matchMedia('(prefers-color-scheme: dark)');
+			const onChange = jest.fn();
+			query.addEventListener('change', onChange);
+
+			expect(query.matches).toBe(false);
+
+			appShell.emitThemeChange('dark');
+			appShell.emitThemeChange('dark');
+
+			expect(query.matches).toBe(true);
+			expect(onChange).toHaveBeenCalledTimes(1);
+			expect(onChange.mock.calls[0][0]).toMatchObject({
+				type: 'change',
+				matches: true,
+				media: '(prefers-color-scheme: dark)'
+			});
+			expect(window.matchMedia('(min-width: 1px)').matches).toBe(false);
+		} finally {
+			appShell.restore();
+		}
+
+		expect('matchMedia' in window).toBe(false);
+	});
+
+	it('skips the matchMedia patch when explicit window mocks run outside a browser', () => {
+		const originalPostMessage = jest.fn();
+		const parentWindow = { postMessage: originalPostMessage };
+		const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+		Object.defineProperty(globalThis, 'window', {
+			configurable: true,
+			value: undefined
+		});
+
+		try {
+			const appShell = mockSdkContext({
+				parentWindow,
+				sourceWindow: { dispatchEvent: () => true }
+			});
+
+			expect(() => appShell.emitThemeChange('dark')).not.toThrow();
+			appShell.restore();
+
+			expect(parentWindow.postMessage).toBe(originalPostMessage);
+		} finally {
+			if (windowDescriptor) {
+				Object.defineProperty(globalThis, 'window', windowDescriptor);
+			}
+		}
+
+		expect('matchMedia' in window).toBe(false);
+	});
+
+	it('passes other media queries to an existing matchMedia and puts it back on restore', () => {
+		const originalMatchMedia = jest.fn((query: string) => ({ matches: true, media: query }));
+		Object.defineProperty(window, 'matchMedia', {
+			configurable: true,
+			writable: true,
+			value: originalMatchMedia
+		});
+
+		try {
+			const appShell = mockSdkContext({ colorScheme: 'dark' });
+
+			expect(window.matchMedia('(prefers-color-scheme: dark)').matches).toBe(true);
+			expect(originalMatchMedia).not.toHaveBeenCalled();
+			expect(window.matchMedia('(min-width: 1px)')).toEqual({ matches: true, media: '(min-width: 1px)' });
+
+			appShell.restore();
+
+			expect(window.matchMedia).toBe(originalMatchMedia);
+		} finally {
+			Reflect.deleteProperty(window, 'matchMedia');
+		}
+	});
 });

@@ -124,6 +124,51 @@ router.navigateByUrl(`/${page.subPath}`);
 - `page.route` is unchanged. Use it when you need the full host URL, for example
   to derive the tenant origin.
 
+### Syncing the Theme with App Shell
+
+The SDK keeps the plugin in step with the ISC light or dark theme. `createSDK()`
+applies the current theme before the handshake starts, so the first paint
+already matches, then follows every theme switch:
+
+- Dark: adds the SailPoint Design System `spds-dark` class to
+  `document.documentElement` and sets its `color-scheme` to `dark`.
+- Light: removes the class and sets `color-scheme` to `light`.
+
+The theme comes from the plugin frame's `prefers-color-scheme`, which tracks the
+`color-scheme` App Shell sets on its root. Where `window.matchMedia` is
+unavailable, such as jsdom or server-side rendering, the SDK reports `'light'`.
+
+Read the theme when the plugin styles something itself, such as a chart:
+
+```typescript
+const sdk = createSDK();
+
+chart.setTheme(sdk.theme.getColorScheme());
+
+sdk.events.onThemeChange(({ colorScheme }) => {
+	chart.setTheme(colorScheme);
+});
+```
+
+- `theme.getColorScheme()` is synchronous and works before the handshake.
+- `onThemeChange` returns an unsubscribe function. It fires only when the scheme
+  changes, not on subscribe.
+
+Use `applyTheme` to change where the theme lands, or pass `false` to leave the
+document alone and keep only the getter and event:
+
+```typescript
+createSDK({ applyTheme: { darkClass: 'acme-dark', root: document.body } });
+
+createSDK({ applyTheme: false });
+```
+
+Plugins without dark styles should pass `applyTheme: false`. `color-scheme: dark`
+also switches the browser's default text, background, and form control colors.
+
+This replaces hand-written `prefers-color-scheme` listeners that toggle
+`spds-dark`.
+
 ### Commands
 
 | Command | Description |
@@ -215,6 +260,24 @@ expect(appShell.routeChanges).toEqual(['settings']);
 `sdk.getContext()`. The default mock route is
 `https://mock-app-shell.sailpoint.test/ui/plugin/mock-plugin/settings`, which
 gives a `subPath` of `'settings'`.
+
+While installed, the mock also answers the frame's
+`(prefers-color-scheme: dark)` query. Pass `colorScheme` to set the starting
+theme (default `'light'`) and call `emitThemeChange()` to switch it. Install the
+mock before `createSDK()`, which reads the theme immediately:
+
+```typescript
+const appShell = mockSdkContext({ colorScheme: 'dark' });
+const sdk = createSDK({ targetOrigin: appShell.targetOrigin });
+
+expect(sdk.theme.getColorScheme()).toBe('dark');
+
+appShell.emitThemeChange('light');
+expect(document.documentElement.classList.contains('spds-dark')).toBe(false);
+```
+
+Other media queries go to the original `window.matchMedia`, or never match when
+there is none. `restore()` puts the original back.
 
 The mock has no dependency on Jest, Vitest, or another test framework.
 
