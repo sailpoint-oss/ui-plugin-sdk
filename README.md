@@ -167,7 +167,9 @@ Plugins without dark styles should pass `applyTheme: false`. `color-scheme: dark
 also switches the browser's default text, background, and form control colors.
 
 This replaces hand-written `prefers-color-scheme` listeners that toggle
-`spds-dark`.
+`spds-dark`. To update an existing plugin, follow the
+[`adopting-theme-sync`](skills/adopting-theme-sync/SKILL.md) skill. Coding
+agents such as Claude Code and Cursor can load it directly.
 
 ### Commands
 

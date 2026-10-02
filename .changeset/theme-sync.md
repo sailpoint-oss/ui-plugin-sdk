@@ -28,4 +28,5 @@ form control colors.
   when there is none. `restore()` puts the original back.
 
 This replaces hand-written `prefers-color-scheme` listeners that toggle
-`spds-dark`.
+`spds-dark`. Existing plugins can follow `skills/adopting-theme-sync/SKILL.md`
+to remove old theme code and pick the right setting.
