@@ -20,10 +20,14 @@ export const createSDK = (config: SailPointPluginSDKConfig = {}): SailPointPlugi
 			onTokenUpdate: callback =>
 				internalSDK.onTokenUpdate(payload => {
 					callback(payload.token);
-				})
+				}),
+			onThemeChange: callback => internalSDK.onThemeChange(callback)
 		},
 		navigation: {
 			setRoute: (subPath: string) => internalSDK.setRoute(subPath)
+		},
+		theme: {
+			getColorScheme: () => internalSDK.getColorScheme()
 		}
 	};
 };

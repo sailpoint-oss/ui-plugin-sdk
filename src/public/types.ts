@@ -180,6 +180,35 @@ export interface RouteChangePayload {
 	subPath: string;
 }
 
+/**
+ * Color scheme of the ISC page hosting the plugin.
+ */
+export type ColorScheme = 'light' | 'dark';
+
+/**
+ * Theme of the ISC page hosting the plugin.
+ *
+ * The SDK derives it from the plugin frame's `prefers-color-scheme`, which
+ * tracks the `color-scheme` App Shell sets on its root, so it follows theme
+ * switches without a reload.
+ */
+export interface ThemeContext {
+	colorScheme: ColorScheme;
+}
+
+/**
+ * Where the SDK applies the host color scheme in the plugin document.
+ */
+export interface ApplyThemeOptions {
+	/**
+	 * Class toggled on `root` while the host is dark. Defaults to `'spds-dark'`,
+	 * the SailPoint Design System dark theme class.
+	 */
+	darkClass?: string;
+	/** Element that receives the class and `color-scheme`. Defaults to `document.documentElement`. */
+	root?: HTMLElement;
+}
+
 export interface SailPointPluginSDKConfig {
 	targetOrigin?: string;
 	parentWindow?: MessageTarget;
@@ -190,6 +219,15 @@ export interface SailPointPluginSDKConfig {
 	requestTimeoutMs?: number;
 	maxClockSkewMs?: number;
 	now?: () => number;
+	/**
+	 * Applies the host color scheme to the plugin document: toggles the dark
+	 * class on the root element and sets its `color-scheme`, once in
+	 * `createSDK()` and again on every theme change. On by default.
+	 *
+	 * Pass `false` to leave the document untouched. `theme.getColorScheme()` and
+	 * `events.onThemeChange` keep working either way.
+	 */
+	applyTheme?: false | ApplyThemeOptions;
 }
 
 export interface SailPointPluginSDK {
@@ -202,6 +240,11 @@ export interface SailPointPluginSDK {
 	events: {
 		onViewportChange(callback: (dimensions: ViewportUpdatePayload) => void): () => void;
 		onTokenUpdate(callback: (newToken: string) => void): () => void;
+		/**
+		 * Calls `callback` when the host switches between light and dark. Fires
+		 * only when the scheme changes, not on subscribe.
+		 */
+		onThemeChange(callback: (theme: ThemeContext) => void): () => void;
 	};
 	navigation: {
 		/**
@@ -224,6 +267,13 @@ export interface SailPointPluginSDK {
 		 *   App Shell preserves its own host-owned query parameters.
 		 */
 		setRoute(subPath: string): Promise<void>;
+	};
+	theme: {
+		/**
+		 * The host color scheme. Synchronous and available before the handshake.
+		 * `'light'` where `window.matchMedia` is unavailable.
+		 */
+		getColorScheme(): ColorScheme;
 	};
 }
 
