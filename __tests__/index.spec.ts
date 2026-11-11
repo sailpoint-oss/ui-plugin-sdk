@@ -172,7 +172,9 @@ describe('@sailpoint/ui-plugin-sdk', () => {
 	});
 
 	it('should throw an actionable error when no origin is available', () => {
-		expect(() => sdk.createSDK()).toThrow('Open the plugin inside ISC via ?spPluginDev=<alias>');
+		expect(() => sdk.createSDK()).toThrow(
+			'Open the plugin inside SailPoint Identity Security via ?spPluginDev=<alias>'
+		);
 	});
 
 	it('should throw a clear error outside a browser', () => {

@@ -81,6 +81,6 @@ export const resolveTargetOrigin = (explicitTargetOrigin?: string): string => {
 	}
 
 	throw new Error(
-		'Unable to resolve App Shell origin. Open the plugin inside ISC via ?spPluginDev=<alias> or pass config.targetOrigin explicitly.'
+		'Unable to resolve App Shell origin. Open the plugin inside SailPoint Identity Security via ?spPluginDev=<alias> or pass config.targetOrigin explicitly.'
 	);
 };
