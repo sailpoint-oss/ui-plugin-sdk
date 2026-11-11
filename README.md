@@ -1,6 +1,6 @@
 # @sailpoint/ui-plugin-sdk
 
-Browser runtime library for SailPoint ISC UI plugins — COIP/iframe handshake and plugin integration.
+Browser runtime library for SailPoint Identity Security UI plugins — COIP/iframe handshake and plugin integration.
 
 ## Getting Started
 
@@ -17,7 +17,7 @@ pnpm install
 
 ### Usage
 
-When the plugin is mounted inside ISC, the SDK resolves the App Shell origin from
+When the plugin is mounted inside SailPoint Identity Security, the SDK resolves the App Shell origin from
 the iframe context:
 
 ```typescript
