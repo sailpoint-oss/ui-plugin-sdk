@@ -2,6 +2,7 @@ import { COIP_PROTOCOL_VERSION, MESSAGE_TYPES } from '../protocol/constants';
 import type { EventMessageType, MessageTarget, RequestMessageType, RuntimeRequestEnvelope } from '../protocol/types';
 import { ApiError } from '../public/api.error';
 import type {
+	ColorScheme,
 	PageContext,
 	PluginConfiguration,
 	PluginContext,
@@ -9,6 +10,7 @@ import type {
 	SailPointPluginSDKConfig,
 	SlotContext,
 	TenantContext,
+	ThemeContext,
 	TokenUpdatePayload,
 	UserCapabilities,
 	UserContext,
@@ -17,6 +19,7 @@ import type {
 import { RuntimeEngine, RuntimeEngineError } from './engine';
 import { isRecord } from './engine.utils';
 import { extractSubPath } from './page-route';
+import { ThemeSync } from './theme';
 import { registerWindowSailpointConfig } from './window-config';
 
 interface CoipTokenData {
@@ -240,6 +243,7 @@ export class InternalSailPointPluginSDK {
 	private tokenRefreshInFlight: Promise<string> | null = null;
 	private pluginContext: PluginContext | null = null;
 	private tokenSubscriptionCleanup: (() => void) | null = null;
+	private readonly themeSync: ThemeSync;
 
 	public readonly events = {
 		onViewportChange: (callback: (dimensions: ViewportUpdatePayload) => void): (() => void) =>
@@ -247,11 +251,16 @@ export class InternalSailPointPluginSDK {
 		onTokenUpdate: (callback: (newToken: string) => void): (() => void) =>
 			this.onTokenUpdate(payload => {
 				callback(payload.token);
-			})
+			}),
+		onThemeChange: (callback: (theme: ThemeContext) => void): (() => void) => this.onThemeChange(callback)
 	};
 
 	public readonly navigation = {
 		setRoute: (subPath: string): Promise<void> => this.setRoute(subPath)
+	};
+
+	public readonly theme = {
+		getColorScheme: (): ColorScheme => this.getColorScheme()
 	};
 
 	public constructor(config: InternalSailPointPluginSDKConfig) {
@@ -264,14 +273,22 @@ export class InternalSailPointPluginSDK {
 		this.protocolVersion = config.protocolVersion ?? COIP_PROTOCOL_VERSION;
 		this.now = config.now ?? (() => Date.now());
 		this.fetchApi = config.fetchApi;
+		/**
+		 * Started here rather than in the handshake so the first paint already
+		 * matches the host theme.
+		 */
+		this.themeSync = new ThemeSync(config.applyTheme);
+		this.themeSync.start();
 	}
 
 	public start(): void {
 		this.engine.start();
+		this.themeSync.start();
 	}
 
 	public stop(): void {
 		this.engine.stop();
+		this.themeSync.stop();
 		if (this.tokenSubscriptionCleanup) {
 			this.tokenSubscriptionCleanup();
 			this.tokenSubscriptionCleanup = null;
@@ -446,6 +463,14 @@ export class InternalSailPointPluginSDK {
 
 	public onViewportUpdate(handler: (payload: ViewportUpdatePayload) => void): () => void {
 		return this.onEvent(MESSAGE_TYPES.SP_VIEWPORT_UPDATE_EVT, handler);
+	}
+
+	public onThemeChange(handler: (theme: ThemeContext) => void): () => void {
+		return this.themeSync.onChange(handler);
+	}
+
+	public getColorScheme(): ColorScheme {
+		return this.themeSync.getColorScheme();
 	}
 
 	public emitTokenUpdate(payload: TokenUpdatePayload): void {

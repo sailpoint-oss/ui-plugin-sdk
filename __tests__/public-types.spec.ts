@@ -1,9 +1,12 @@
 import { createSDK } from '../src';
 import type {
 	CapabilityFlagKey,
+	ColorScheme,
 	PluginContext,
 	RouteChangePayload,
 	SailPointPluginSDK,
+	SailPointPluginSDKConfig,
+	ThemeContext,
 	UserCapabilities
 } from '../src';
 import { mockSdkContext } from '../src/testing';
@@ -153,6 +156,40 @@ describe('public context type contract', () => {
 			expect(missing).toEqual({});
 			// @ts-expect-error setRoute only accepts a string subPath.
 			await expect(sdk.navigation.setRoute(1)).rejects.toThrow(TypeError);
+		} finally {
+			appShell.restore();
+		}
+	});
+
+	it('exports the theme namespace, onThemeChange, and applyTheme config', () => {
+		const appShell = mockSdkContext({ colorScheme: 'dark' });
+
+		try {
+			const sdk: SailPointPluginSDK = createSDK({ targetOrigin: appShell.targetOrigin });
+			const colorScheme: ColorScheme = sdk.theme.getColorScheme();
+			const received: ThemeContext[] = [];
+			const unsubscribe: () => void = sdk.events.onThemeChange(theme => received.push(theme));
+			const configs: SailPointPluginSDKConfig[] = [
+				{ applyTheme: false },
+				{ applyTheme: {} },
+				{ applyTheme: { darkClass: 'acme-dark', root: document.body } }
+			];
+
+			// @ts-expect-error applyTheme is on by default; only false opts out.
+			const enabled: SailPointPluginSDKConfig = { applyTheme: true };
+			// @ts-expect-error the host theme is light or dark; there is no system value.
+			const system: ColorScheme = 'system';
+
+			appShell.emitThemeChange('light');
+			unsubscribe();
+
+			expect([colorScheme, received, configs.length, enabled.applyTheme, system]).toEqual([
+				'dark',
+				[{ colorScheme: 'light' }],
+				3,
+				true,
+				'system'
+			]);
 		} finally {
 			appShell.restore();
 		}

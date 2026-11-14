@@ -6,6 +6,7 @@ import type {
 	RuntimeResponseEnvelope
 } from '../protocol/types.js';
 import type {
+	ColorScheme,
 	PageContext,
 	PluginContext,
 	RouteChangePayload,
@@ -13,6 +14,7 @@ import type {
 	ViewportUpdatePayload
 } from '../public/types.js';
 import { extractSubPath } from '../runtime/page-route.js';
+import { DARK_COLOR_SCHEME_QUERY } from '../runtime/theme.js';
 
 const DEFAULT_TARGET_ORIGIN = 'https://mock-app-shell.sailpoint.test';
 const DEFAULT_TOKEN = 'mock-sdk-token';
@@ -99,6 +101,8 @@ export interface MockSdkContextOptions {
 	now?: () => number;
 	parentWindow?: MessageTarget;
 	sourceWindow?: MockSourceWindow;
+	/** Host color scheme the frame's `prefers-color-scheme` reports. Defaults to `'light'`. */
+	colorScheme?: ColorScheme;
 }
 
 export interface MockOutboundMessage {
@@ -114,7 +118,36 @@ export interface MockSdkContextHandle {
 	readonly routeChanges: readonly string[];
 	emitTokenUpdate(token: string): void;
 	emitViewportChange(dimensions: ViewportUpdatePayload): void;
+	/** Switches the host theme. Like a browser, fires `change` only when the scheme flips. */
+	emitThemeChange(colorScheme: ColorScheme): void;
 	restore(): void;
+}
+
+/**
+ * Media query list whose match the mock host controls.
+ */
+class MockMediaQueryList extends EventTarget {
+	public readonly media: string;
+	private currentMatches: boolean;
+
+	public constructor(media: string, matches: boolean) {
+		super();
+		this.media = media;
+		this.currentMatches = matches;
+	}
+
+	public get matches(): boolean {
+		return this.currentMatches;
+	}
+
+	public setMatches(matches: boolean): void {
+		if (matches === this.currentMatches) {
+			return;
+		}
+
+		this.currentMatches = matches;
+		this.dispatchEvent(Object.assign(new Event('change'), { matches, media: this.media }));
+	}
 }
 
 const getBrowserWindow = (): Window => {
@@ -123,6 +156,34 @@ const getBrowserWindow = (): Window => {
 	}
 
 	return window;
+};
+
+/**
+ * Answers the dark color-scheme query from `darkSchemeQuery` and passes other
+ * queries to the original `matchMedia`, or never matches them when there is
+ * none (jsdom). Returns a function that puts the original back.
+ */
+const installMatchMedia = (browserWindow: Window, darkSchemeQuery: MockMediaQueryList): (() => void) => {
+	const hadOwnMatchMedia = Object.prototype.hasOwnProperty.call(browserWindow, 'matchMedia');
+	const originalMatchMedia: Window['matchMedia'] | undefined = browserWindow.matchMedia;
+
+	browserWindow.matchMedia = (query: string): MediaQueryList => {
+		if (query === DARK_COLOR_SCHEME_QUERY) {
+			return darkSchemeQuery as unknown as MediaQueryList;
+		}
+
+		return typeof originalMatchMedia === 'function'
+			? originalMatchMedia.call(browserWindow, query)
+			: (new MockMediaQueryList(query, false) as unknown as MediaQueryList);
+	};
+
+	return () => {
+		if (hadOwnMatchMedia) {
+			browserWindow.matchMedia = originalMatchMedia as Window['matchMedia'];
+		} else {
+			Reflect.deleteProperty(browserWindow, 'matchMedia');
+		}
+	};
 };
 
 const isEnvelope = (value: unknown): value is RuntimeEnvelope => {
@@ -151,6 +212,13 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 	};
 	const messages: MockOutboundMessage[] = [];
 	const originalPostMessage = parentWindow.postMessage;
+	const darkSchemeQuery = new MockMediaQueryList(DARK_COLOR_SCHEME_QUERY, options.colorScheme === 'dark');
+	/**
+	 * Patches the global window even when explicit window mocks are supplied,
+	 * because the SDK reads the theme from the global `matchMedia`.
+	 */
+	const restoreMatchMedia =
+		typeof window === 'undefined' ? () => undefined : installMatchMedia(window, darkSchemeQuery);
 	let currentToken = options.token ?? DEFAULT_TOKEN;
 	let requestSequence = 0;
 	let restored = false;
@@ -276,12 +344,16 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 				payload: dimensions
 			});
 		},
+		emitThemeChange(colorScheme: ColorScheme): void {
+			darkSchemeQuery.setMatches(colorScheme === 'dark');
+		},
 		restore(): void {
 			if (restored) {
 				return;
 			}
 
 			parentWindow.postMessage = originalPostMessage;
+			restoreMatchMedia();
 			restored = true;
 		}
 	};
