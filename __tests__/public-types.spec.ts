@@ -1,9 +1,11 @@
 import { createSDK } from '../src';
 import type {
 	CapabilityFlagKey,
+	ColorScheme,
 	PluginContext,
 	RouteChangePayload,
 	SailPointPluginSDK,
+	ThemeContext,
 	UserCapabilities
 } from '../src';
 import { mockSdkContext } from '../src/testing';
@@ -153,6 +155,20 @@ describe('public context type contract', () => {
 			expect(missing).toEqual({});
 			// @ts-expect-error setRoute only accepts a string subPath.
 			await expect(sdk.navigation.setRoute(1)).rejects.toThrow(TypeError);
+		} finally {
+			appShell.restore();
+		}
+	});
+
+	it('exports color-scheme types and namespaces without copied implementation details', async () => {
+		const colorScheme: ColorScheme = 'dark';
+		const theme: ThemeContext = { colorScheme };
+		const appShell = mockSdkContext({ appShellColorScheme: colorScheme });
+		const sdk: SailPointPluginSDK = createSDK({ targetOrigin: appShell.targetOrigin });
+
+		try {
+			await sdk.getContext();
+			expect(sdk.theme.getColorScheme()).toBe(theme.colorScheme);
 		} finally {
 			appShell.restore();
 		}

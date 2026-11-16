@@ -1,7 +1,8 @@
 import { createSDK } from '../src';
 import { MESSAGE_TYPES } from '../src/protocol/constants';
-import type { PluginContext, UserCapabilities } from '../src/public/types';
+import type { UserCapabilities } from '../src/public/types';
 import { mockSdkContext } from '../src/testing';
+import type { MockPluginContext } from '../src/testing';
 
 const NOW = 1_717_600_000_000;
 const NOW_ISO = new Date(NOW).toISOString();
@@ -20,7 +21,7 @@ const CAPABILITIES: UserCapabilities = {
 	isSaasManagementAdmin: false,
 	isSaasManagementReader: false
 };
-const CONTEXT: PluginContext = {
+const CONTEXT: MockPluginContext = {
 	tenant: {
 		id: 'tenant-1',
 		scriptName: 'acme',
@@ -64,7 +65,7 @@ describe('mockSdkContext', () => {
 				now: () => NOW
 			});
 
-			await expect(sdk.getContext()).resolves.toEqual(CONTEXT);
+			await expect(sdk.getContext()).resolves.toEqual(appShell.context);
 			expect(appShell.messages.map(({ message }) => (message as { type: string }).type)).toEqual([
 				MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 				MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES,
@@ -224,5 +225,37 @@ describe('mockSdkContext', () => {
 		appShell.restore();
 
 		expect(window.parent.postMessage).toBe(originalPostMessage);
+	});
+
+	it('restores the exact matchMedia property state idempotently', () => {
+		const previousDescriptor = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+		const originalMatchMedia = jest.fn();
+		const originalDescriptor = {
+			configurable: true,
+			enumerable: true,
+			writable: false,
+			value: originalMatchMedia
+		};
+		Object.defineProperty(window, 'matchMedia', originalDescriptor);
+		const appShell = mockSdkContext({ osColorScheme: 'dark' });
+
+		try {
+			expect(window.matchMedia).not.toBe(originalMatchMedia);
+			expect(window.matchMedia('(prefers-color-scheme: dark)').matches).toBe(true);
+
+			appShell.emitOsColorSchemeChange('light');
+			expect(window.matchMedia('(prefers-color-scheme: dark)').matches).toBe(false);
+
+			appShell.restore();
+			appShell.restore();
+
+			expect(Object.getOwnPropertyDescriptor(window, 'matchMedia')).toEqual(originalDescriptor);
+		} finally {
+			if (previousDescriptor) {
+				Object.defineProperty(window, 'matchMedia', previousDescriptor);
+			} else {
+				delete (window as Partial<Window>).matchMedia;
+			}
+		}
 	});
 });

@@ -149,6 +149,18 @@ export interface PluginConfiguration {
 	pluginId?: string;
 }
 
+/**
+ * Color schemes App Shell can send to a plugin.
+ */
+export type ColorScheme = 'light' | 'dark';
+
+/**
+ * Effective theme state delivered to theme-change subscribers.
+ */
+export interface ThemeContext {
+	colorScheme: ColorScheme;
+}
+
 export interface PluginContext {
 	tenant: TenantContext;
 	user: UserContext;
@@ -190,6 +202,24 @@ export interface SailPointPluginSDKConfig {
 	requestTimeoutMs?: number;
 	maxClockSkewMs?: number;
 	now?: () => number;
+	/**
+	 * Synchronizes the effective parent/OS or App Shell scheme to
+	 * `document.documentElement.style.colorScheme`. Defaults to `true`.
+	 *
+	 * Set this to `false` when a plugin is designed for only one scheme and
+	 * should keep its existing document styling. Theme state and events remain
+	 * available without this DOM effect.
+	 */
+	syncColorScheme?: boolean;
+	/**
+	 * Opts into synchronizing the effective scheme to the SPDS `spds-dark`
+	 * class. Defaults to `false`.
+	 *
+	 * Parent/OS color-scheme fallback, App Shell takeover, and theme APIs remain
+	 * active when disabled. Root `color-scheme` synchronization is controlled
+	 * separately by `syncColorScheme`.
+	 */
+	useSpds?: boolean;
 }
 
 export interface SailPointPluginSDK {
@@ -202,6 +232,10 @@ export interface SailPointPluginSDK {
 	events: {
 		onViewportChange(callback: (dimensions: ViewportUpdatePayload) => void): () => void;
 		onTokenUpdate(callback: (newToken: string) => void): () => void;
+		onThemeChange(callback: (theme: ThemeContext) => void): () => void;
+	};
+	theme: {
+		getColorScheme(): ColorScheme | undefined;
 	};
 	navigation: {
 		/**

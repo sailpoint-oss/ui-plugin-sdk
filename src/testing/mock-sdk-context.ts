@@ -6,6 +6,7 @@ import type {
 	RuntimeResponseEnvelope
 } from '../protocol/types.js';
 import type {
+	ColorScheme,
 	PageContext,
 	PluginContext,
 	RouteChangePayload,
@@ -99,6 +100,8 @@ export interface MockSdkContextOptions {
 	now?: () => number;
 	parentWindow?: MessageTarget;
 	sourceWindow?: MockSourceWindow;
+	osColorScheme?: ColorScheme;
+	appShellColorScheme?: ColorScheme;
 }
 
 export interface MockOutboundMessage {
@@ -114,6 +117,8 @@ export interface MockSdkContextHandle {
 	readonly routeChanges: readonly string[];
 	emitTokenUpdate(token: string): void;
 	emitViewportChange(dimensions: ViewportUpdatePayload): void;
+	emitOsColorSchemeChange(colorScheme: ColorScheme): void;
+	emitThemeChange(colorScheme: ColorScheme): void;
 	restore(): void;
 }
 
@@ -149,8 +154,42 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 			subPath: extractSubPath(suppliedContext.page.route)
 		}
 	};
+	const initPayload = {
+		...suppliedContext,
+		...(options.appShellColorScheme !== undefined ? { colorScheme: options.appShellColorScheme } : {})
+	};
 	const messages: MockOutboundMessage[] = [];
 	const originalPostMessage = parentWindow.postMessage;
+	const mediaWindow = typeof window === 'undefined' ? null : window;
+	const matchMediaDescriptor = mediaWindow ? Object.getOwnPropertyDescriptor(mediaWindow, 'matchMedia') : undefined;
+	const hadOwnMatchMedia = mediaWindow ? Object.prototype.hasOwnProperty.call(mediaWindow, 'matchMedia') : false;
+	let osColorScheme = options.osColorScheme ?? 'light';
+	const mediaQueryListeners = new Set<() => void>();
+	const mediaQueryList = {
+		media: '(prefers-color-scheme: dark)',
+		get matches(): boolean {
+			return osColorScheme === 'dark';
+		},
+		onchange: null,
+		addEventListener(_type: string, listener: () => void): void {
+			mediaQueryListeners.add(listener);
+		},
+		removeEventListener(_type: string, listener: () => void): void {
+			mediaQueryListeners.delete(listener);
+		},
+		addListener(listener: () => void): void {
+			mediaQueryListeners.add(listener);
+		},
+		removeListener(listener: () => void): void {
+			mediaQueryListeners.delete(listener);
+		},
+		dispatchEvent(): boolean {
+			for (const listener of mediaQueryListeners) {
+				listener();
+			}
+			return true;
+		}
+	} as unknown as MediaQueryList;
 	let currentToken = options.token ?? DEFAULT_TOKEN;
 	let requestSequence = 0;
 	let restored = false;
@@ -224,7 +263,7 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 				break;
 			case MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES:
 				enqueue(() => {
-					dispatchRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, suppliedContext);
+					dispatchRequest(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, initPayload);
 				});
 				break;
 			case MESSAGE_TYPES.SP_GET_CURRENT_TOKEN_REQ:
@@ -241,6 +280,13 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 	};
 
 	parentWindow.postMessage = handleOutboundMessage;
+	if (mediaWindow) {
+		Object.defineProperty(mediaWindow, 'matchMedia', {
+			configurable: true,
+			writable: true,
+			value: () => mediaQueryList
+		});
+	}
 
 	return {
 		context,
@@ -276,12 +322,30 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 				payload: dimensions
 			});
 		},
+		emitOsColorSchemeChange(colorScheme: ColorScheme): void {
+			osColorScheme = colorScheme;
+			mediaQueryList.dispatchEvent(new Event('change'));
+		},
+		emitThemeChange(colorScheme: ColorScheme): void {
+			dispatchIncoming({
+				type: MESSAGE_TYPES.SP_COLOR_SCHEME_UPDATE_EVT,
+				timestamp: timestamp(),
+				payload: { colorScheme }
+			});
+		},
 		restore(): void {
 			if (restored) {
 				return;
 			}
 
 			parentWindow.postMessage = originalPostMessage;
+			if (mediaWindow) {
+				if (hadOwnMatchMedia && matchMediaDescriptor) {
+					Object.defineProperty(mediaWindow, 'matchMedia', matchMediaDescriptor);
+				} else {
+					delete (mediaWindow as Partial<Window>).matchMedia;
+				}
+			}
 			restored = true;
 		}
 	};

@@ -7,6 +7,8 @@ export const createSDK = (config: SailPointPluginSDKConfig = {}): SailPointPlugi
 		...config,
 		targetOrigin: resolveTargetOrigin(config.targetOrigin)
 	});
+	// Start the handshake immediately so appearance applies before any SDK call, ignoring a failure nobody is awaiting.
+	void internalSDK.initialize().catch(() => undefined);
 
 	return {
 		getContext: () => internalSDK.getContext(),
@@ -20,7 +22,11 @@ export const createSDK = (config: SailPointPluginSDKConfig = {}): SailPointPlugi
 			onTokenUpdate: callback =>
 				internalSDK.onTokenUpdate(payload => {
 					callback(payload.token);
-				})
+				}),
+			onThemeChange: callback => internalSDK.onThemeChange(callback)
+		},
+		theme: {
+			getColorScheme: () => internalSDK.getColorScheme()
 		},
 		navigation: {
 			setRoute: (subPath: string) => internalSDK.setRoute(subPath)
