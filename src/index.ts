@@ -9,6 +9,7 @@ export type {
 	CapabilityFlagKey,
 	ColorScheme,
 	PageContext,
+	PluginBrand,
 	PluginConfiguration,
 	PluginContext,
 	RouteChangePayload,

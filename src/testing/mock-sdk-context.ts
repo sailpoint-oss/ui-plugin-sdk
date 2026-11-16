@@ -8,6 +8,7 @@ import type {
 import type {
 	ColorScheme,
 	PageContext,
+	PluginBrand,
 	PluginContext,
 	RouteChangePayload,
 	UserCapabilities,
@@ -102,6 +103,7 @@ export interface MockSdkContextOptions {
 	sourceWindow?: MockSourceWindow;
 	osColorScheme?: ColorScheme;
 	appShellColorScheme?: ColorScheme;
+	brand?: PluginBrand;
 }
 
 export interface MockOutboundMessage {
@@ -147,16 +149,19 @@ export const mockSdkContext = (options: MockSdkContextOptions = {}): MockSdkCont
 	const now = options.now ?? (() => Date.now());
 	const timestamp = (): string => new Date(now()).toISOString();
 	const suppliedContext = options.context ?? DEFAULT_CONTEXT;
+	const brand = options.brand ?? suppliedContext.brand;
 	const context: PluginContext = {
 		...suppliedContext,
 		page: {
 			...suppliedContext.page,
 			subPath: extractSubPath(suppliedContext.page.route)
-		}
+		},
+		...(brand !== undefined ? { brand } : {})
 	};
 	const initPayload = {
 		...suppliedContext,
-		...(options.appShellColorScheme !== undefined ? { colorScheme: options.appShellColorScheme } : {})
+		...(options.appShellColorScheme !== undefined ? { colorScheme: options.appShellColorScheme } : {}),
+		...(brand !== undefined ? { brand } : {})
 	};
 	const messages: MockOutboundMessage[] = [];
 	const originalPostMessage = parentWindow.postMessage;

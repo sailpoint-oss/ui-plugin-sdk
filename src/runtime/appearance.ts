@@ -1,7 +1,23 @@
-import { applySpdsColorScheme, listenToColorSchemeChange } from '../design-system-theme/public-api';
-import type { ColorScheme, ThemeContext } from '../public/types';
+import { applySpdsBranding, applySpdsColorScheme, listenToColorSchemeChange } from '../design-system-theme/public-api';
+import type { SpdsBrandingConfig } from '../design-system-theme/public-api';
+import type { ColorScheme, PluginBrand, ThemeContext } from '../public/types';
 
 const isColorScheme = (value: unknown): value is ColorScheme => value === 'light' || value === 'dark';
+
+const toSpdsBrandingConfig = (brand: PluginBrand | undefined): SpdsBrandingConfig | undefined => {
+	if (!brand) {
+		return undefined;
+	}
+
+	return {
+		actionButtonColor: brand.actionButtonColor,
+		darkActionButtonColor: brand.darkActionButtonColor,
+		activeLinkColor: brand.activeLinkColor,
+		darkActiveLinkColor: brand.darkActiveLinkColor,
+		navigationColor: brand.navigationColor,
+		darkNavigationColor: brand.darkNavigationColor
+	};
+};
 
 /**
  * Coordinates effective appearance state, App Shell authority, and optional SPDS DOM effects for one SDK instance.
@@ -47,6 +63,17 @@ export class AppearanceCoordinator {
 		this.applyColorScheme(value);
 
 		return true;
+	}
+
+	/**
+	 * Applies initialization-only branding, using SPDS defaults when no brand is available.
+	 */
+	public applyBranding(brand: PluginBrand | undefined): void {
+		if (!this.useSpds) {
+			return;
+		}
+
+		applySpdsBranding(toSpdsBrandingConfig(brand));
 	}
 
 	/**

@@ -2,6 +2,7 @@ import { createSDK } from '../src';
 import type {
 	CapabilityFlagKey,
 	ColorScheme,
+	PluginBrand,
 	PluginContext,
 	RouteChangePayload,
 	SailPointPluginSDK,
@@ -160,15 +161,27 @@ describe('public context type contract', () => {
 		}
 	});
 
-	it('exports color-scheme types and namespaces without copied implementation details', async () => {
+	it('exports appearance types and namespaces without copied implementation details', async () => {
+		const brand: PluginBrand = {
+			productName: 'Acme',
+			logoUrl: 'light.svg',
+			darkLogoUrl: 'dark.svg'
+		};
 		const colorScheme: ColorScheme = 'dark';
 		const theme: ThemeContext = { colorScheme };
-		const appShell = mockSdkContext({ appShellColorScheme: colorScheme });
+		const appShell = mockSdkContext({ appShellColorScheme: colorScheme, brand });
 		const sdk: SailPointPluginSDK = createSDK({ targetOrigin: appShell.targetOrigin });
 
 		try {
-			await sdk.getContext();
+			const context = await sdk.getContext();
 			expect(sdk.theme.getColorScheme()).toBe(theme.colorScheme);
+			expect(context.brand).toEqual(brand);
+
+			// @ts-expect-error copied SPDS implementation details are not part of the public SDK.
+			expect(sdk.applySpdsBranding).toBeUndefined();
+			// @ts-expect-error unknown brand fields are not public.
+			const unsafeBrand: PluginBrand = { identity: 'internal' };
+			expect(unsafeBrand).toEqual({ identity: 'internal' });
 		} finally {
 			appShell.restore();
 		}

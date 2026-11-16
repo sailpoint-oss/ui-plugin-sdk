@@ -88,7 +88,18 @@ const APP_SHELL_INIT_PAYLOAD = {
  * Literal optional appearance fields merged by UIARMADA-1188 and UIARMADA-1203.
  */
 const APP_SHELL_APPEARANCE = {
-	colorScheme: 'dark'
+	colorScheme: 'dark',
+	brand: {
+		actionButtonColor: '#0057b8',
+		darkActionButtonColor: '#6fb7ff',
+		activeLinkColor: '#006fba',
+		darkActiveLinkColor: '#8ac8ff',
+		navigationColor: '#002f5f',
+		darkNavigationColor: '#b8dcff',
+		productName: 'Acme Identity Security',
+		logoUrl: 'https://cdn.example/acme-light.svg',
+		darkLogoUrl: 'https://cdn.example/acme-dark.svg'
+	}
 } as const;
 
 /**
@@ -245,7 +256,8 @@ describe('saas-sp-renderer contract compatibility', () => {
 			user: contextPayload.userContext,
 			page: { ...contextPayload.pageContext, subPath: 'settings/general' },
 			slot: contextPayload.slotContext,
-			pluginConfiguration: contextPayload.pluginConfiguration
+			pluginConfiguration: contextPayload.pluginConfiguration,
+			brand: contextPayload.brand
 		});
 		/**
 		 * AC-4: the capability map reaches the plugin key-for-key, and AC-8: the
@@ -261,6 +273,8 @@ describe('saas-sp-renderer contract compatibility', () => {
 		 */
 		await expect(sdk.api.getToken()).resolves.toBe('app-shell-token');
 		expect(sdk.theme.getColorScheme()).toBe('dark');
+		expect(context.brand?.darkLogoUrl).toBe('https://cdn.example/acme-dark.svg');
+		expect(context.brand?.actionButtonColor).toBe('#0057b8');
 		expect(document.documentElement.style.colorScheme).toBe('dark');
 
 		const onThemeChange = jest.fn();

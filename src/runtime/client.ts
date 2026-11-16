@@ -20,6 +20,7 @@ import { AppearanceCoordinator } from './appearance';
 import { RuntimeEngine, RuntimeEngineError } from './engine';
 import { isRecord } from './engine.utils';
 import { extractSubPath } from './page-route';
+import { projectPluginBrand } from './plugin-brand';
 import { registerWindowSailpointConfig } from './window-config';
 
 interface CoipTokenData {
@@ -215,6 +216,8 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 		return null;
 	}
 
+	const brand = projectPluginBrand(context.brand);
+
 	return {
 		tenant,
 		user,
@@ -223,7 +226,8 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 			subPath: extractSubPath(page.route)
 		},
 		slot: slot as SlotContext,
-		pluginConfiguration: context.pluginConfiguration
+		pluginConfiguration: context.pluginConfiguration,
+		...(brand !== undefined ? { brand } : {})
 	};
 };
 
@@ -366,6 +370,7 @@ export class InternalSailPointPluginSDK {
 			if (isRecord(initRequest.payload)) {
 				this.appearance.applyHostColorScheme(initRequest.payload.colorScheme);
 			}
+			this.appearance.applyBranding(pluginContext.brand);
 			this.engine.respond(MESSAGE_TYPES.SP_PLUGIN_INIT_RES, initRequest.requestId, {
 				initialized: true
 			});
