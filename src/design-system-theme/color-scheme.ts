@@ -52,10 +52,9 @@ export function applySpdsColorScheme(colorScheme: SpdsColorScheme): void {
  * own the DOM effects. Returns a function that removes that subscription. Calling the returned function more than
  * once is safe. Each call adds its own listener.
  *
- * Inside an embedded document, the query follows the embedding page's used `color-scheme` in Firefox 105+,
- * Chromium 129+ (Chrome, Edge, Opera, and current Samsung Internet), and Safari 27 and later. Confirm Safari 27 on a
- * shipping build; do not treat the WebKit patch or the Safari 27 release notes as proof that a shipping build updates
- * live. In other browsers, including Safari 26 and earlier, the query follows the operating-system preference.
+ * Inside an embedded document, the query follows the embedding page's used `color-scheme` in Firefox 105+ and
+ * Chromium 129+ (Chrome, Edge, Opera, and current Samsung Internet). In Safari, including Safari 27.2, the query
+ * follows the operating-system preference rather than live changes from the embedding page.
  *
  * Callers that need the embedding page's scheme in every supported browser should receive that scheme from the
  * embedding page and pass it to `applySpdsColorScheme`.

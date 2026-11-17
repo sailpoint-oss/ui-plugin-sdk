@@ -46,6 +46,8 @@ const sdk = createSDK({ targetOrigin: 'https://app-shell.example.com' });
 
 The SDK starts with `window.matchMedia('(prefers-color-scheme: dark)')`. In browsers that propagate color scheme into embedded documents, this follows the parent App Shell; otherwise, it follows the operating-system or browser preference.
 
+In Safari, including Safari 27.2, this fallback follows the operating-system preference rather than live App Shell theme changes. A valid App Shell color-scheme value still becomes authoritative when received through the SDK.
+
 The effective value updates `document.documentElement.style.colorScheme` and `sdk.theme.getColorScheme()`. Theme subscribers receive later changes:
 
 ```typescript
