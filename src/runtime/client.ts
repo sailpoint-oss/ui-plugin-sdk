@@ -2,6 +2,7 @@ import { COIP_PROTOCOL_VERSION, MESSAGE_TYPES } from '../protocol/constants';
 import type { EventMessageType, MessageTarget, RequestMessageType, RuntimeRequestEnvelope } from '../protocol/types';
 import { ApiError } from '../public/api.error';
 import type {
+	ColorScheme,
 	PageContext,
 	PluginConfiguration,
 	PluginContext,
@@ -9,14 +10,17 @@ import type {
 	SailPointPluginSDKConfig,
 	SlotContext,
 	TenantContext,
+	ThemeContext,
 	TokenUpdatePayload,
 	UserCapabilities,
 	UserContext,
 	ViewportUpdatePayload
 } from '../public/types';
+import { AppearanceCoordinator } from './appearance';
 import { RuntimeEngine, RuntimeEngineError } from './engine';
 import { isRecord } from './engine.utils';
 import { extractSubPath } from './page-route';
+import { projectPluginBrand } from './plugin-brand';
 import { registerWindowSailpointConfig } from './window-config';
 
 interface CoipTokenData {
@@ -212,6 +216,8 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 		return null;
 	}
 
+	const brand = projectPluginBrand(context.brand);
+
 	return {
 		tenant,
 		user,
@@ -220,7 +226,8 @@ const normalizePluginContext = (payload: unknown): PluginContext | null => {
 			subPath: extractSubPath(page.route)
 		},
 		slot: slot as SlotContext,
-		pluginConfiguration: context.pluginConfiguration
+		pluginConfiguration: context.pluginConfiguration,
+		...(brand !== undefined ? { brand } : {})
 	};
 };
 
@@ -234,12 +241,14 @@ export class InternalSailPointPluginSDK {
 	private readonly protocolVersion: string;
 	private readonly now: () => number;
 	private readonly fetchApi?: typeof fetch;
+	private readonly appearance: AppearanceCoordinator;
 	private initialized = false;
 	private initPromise: Promise<void> | null = null;
 	private currentToken: string | null = null;
 	private tokenRefreshInFlight: Promise<string> | null = null;
 	private pluginContext: PluginContext | null = null;
 	private tokenSubscriptionCleanup: (() => void) | null = null;
+	private colorSchemeSubscriptionCleanup: (() => void) | null = null;
 
 	public readonly events = {
 		onViewportChange: (callback: (dimensions: ViewportUpdatePayload) => void): (() => void) =>
@@ -264,9 +273,21 @@ export class InternalSailPointPluginSDK {
 		this.protocolVersion = config.protocolVersion ?? COIP_PROTOCOL_VERSION;
 		this.now = config.now ?? (() => Date.now());
 		this.fetchApi = config.fetchApi;
+		this.appearance = new AppearanceCoordinator(config.useSpds, config.syncColorScheme);
 	}
 
 	public start(): void {
+		if (!this.colorSchemeSubscriptionCleanup) {
+			this.colorSchemeSubscriptionCleanup = this.engine.onEvent(
+				MESSAGE_TYPES.SP_COLOR_SCHEME_UPDATE_EVT,
+				eventEnvelope => {
+					const payload = eventEnvelope.payload;
+					if (isRecord(payload)) {
+						this.appearance.applyHostColorScheme(payload.colorScheme);
+					}
+				}
+			);
+		}
 		this.engine.start();
 	}
 
@@ -275,6 +296,10 @@ export class InternalSailPointPluginSDK {
 		if (this.tokenSubscriptionCleanup) {
 			this.tokenSubscriptionCleanup();
 			this.tokenSubscriptionCleanup = null;
+		}
+		if (this.colorSchemeSubscriptionCleanup) {
+			this.colorSchemeSubscriptionCleanup();
+			this.colorSchemeSubscriptionCleanup = null;
 		}
 		this.initialized = false;
 		this.initPromise = null;
@@ -342,6 +367,10 @@ export class InternalSailPointPluginSDK {
 			}
 
 			this.pluginContext = pluginContext;
+			if (isRecord(initRequest.payload)) {
+				this.appearance.applyHostColorScheme(initRequest.payload.colorScheme);
+			}
+			this.appearance.applyBranding(pluginContext.brand);
 			this.engine.respond(MESSAGE_TYPES.SP_PLUGIN_INIT_RES, initRequest.requestId, {
 				initialized: true
 			});
@@ -363,6 +392,20 @@ export class InternalSailPointPluginSDK {
 		}
 
 		return this.pluginContext;
+	}
+
+	/**
+	 * Returns the effective fallback or App Shell color scheme.
+	 */
+	public getColorScheme(): ColorScheme | undefined {
+		return this.appearance.getColorScheme();
+	}
+
+	/**
+	 * Subscribes to effective theme changes.
+	 */
+	public onThemeChange(callback: (theme: ThemeContext) => void): () => void {
+		return this.appearance.onThemeChange(callback);
 	}
 
 	/**

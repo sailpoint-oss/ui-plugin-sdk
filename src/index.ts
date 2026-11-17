@@ -7,7 +7,9 @@
  */
 export type {
 	CapabilityFlagKey,
+	ColorScheme,
 	PageContext,
+	PluginBrand,
 	PluginConfiguration,
 	PluginContext,
 	RouteChangePayload,
@@ -20,6 +22,7 @@ export type {
 	TenantContext,
 	TenantProduct,
 	TenantProductLicense,
+	ThemeContext,
 	TokenUpdatePayload,
 	UserCapabilities,
 	UserContext,

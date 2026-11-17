@@ -1,6 +1,7 @@
 import { createSDK } from '../src';
-import type { PluginContext, SailPointWindowConfig, UserCapabilities } from '../src';
+import type { SailPointWindowConfig, UserCapabilities } from '../src';
 import { mockSdkContext } from '../src/testing';
+import type { MockPluginContext } from '../src/testing';
 
 const NOW = 1_717_600_000_000;
 
@@ -20,7 +21,7 @@ const CAPABILITIES: UserCapabilities = {
 	isSaasManagementReader: false
 };
 
-const CONTEXT: PluginContext = {
+const CONTEXT: MockPluginContext = {
 	tenant: {
 		id: 'tenant-1',
 		scriptName: 'acme',
@@ -152,14 +153,14 @@ describe('window.sailpointConfig', () => {
 	});
 
 	it('lets the latest createSDK registration win', async () => {
-		const firstContext: PluginContext = {
+		const firstContext: MockPluginContext = {
 			...CONTEXT,
 			tenant: {
 				...CONTEXT.tenant,
 				apiUrl: { idn: 'https://first.api.identitynow.com' }
 			}
 		};
-		const secondContext: PluginContext = {
+		const secondContext: MockPluginContext = {
 			...CONTEXT,
 			tenant: {
 				...CONTEXT.tenant,

@@ -42,6 +42,45 @@ Pass `targetOrigin` explicitly for tests, mocks, or non-standard embeddings:
 const sdk = createSDK({ targetOrigin: 'https://app-shell.example.com' });
 ```
 
+### Color Theme Synchronization
+
+The SDK starts with `window.matchMedia('(prefers-color-scheme: dark)')`. In browsers that propagate color scheme into embedded documents, this follows the parent App Shell; otherwise, it follows the operating-system or browser preference.
+
+In Safari, including Safari 27.2, this fallback follows the operating-system preference rather than live App Shell theme changes. A valid App Shell color-scheme value still becomes authoritative when received through the SDK.
+
+The effective value updates `document.documentElement.style.colorScheme` and `sdk.theme.getColorScheme()`. Theme subscribers receive later changes:
+
+```typescript
+const unsubscribe = sdk.events.onThemeChange(({ colorScheme }) => {
+	chart.setTheme(colorScheme);
+});
+
+// Remove one callback when its owner is disposed.
+unsubscribe();
+```
+
+Root synchronization defaults to on because it lets native controls and browser-provided UI match the App Shell. This can change the appearance of controls, scrollbars, and other browser-rendered elements in an existing plugin that only supports one scheme. Keep receiving the effective scheme without changing the document by opting out:
+
+```typescript
+const sdk = createSDK({ syncColorScheme: false });
+```
+
+`syncColorScheme` affects only `document.documentElement.style.colorScheme`. Theme state and events remain active, and `useSpds` separately controls the `spds-dark` class and branding styles.
+
+When App Shell supplies a valid initial `colorScheme` or `SP_COLOR_SCHEME_UPDATE_EVT`, that value becomes authoritative and the SDK stops following `prefers-color-scheme`. Remove competing theme listeners and root `color-scheme` writes when adopting the SDK.
+
+`useSpds` defaults to `false`. Set it to `true` only to apply the same effective scheme to the SPDS `spds-dark` class.
+
+### Branding
+
+`PluginContext.brand` exposes the optional App Shell colors for action buttons, active links, and navigation, regardless of `useSpds`. It also exposes `productName` and logo URLs.[^brand-logo-urls]
+
+With `useSpds: true`, the SDK validates the colors, supplies SPDS defaults for missing or invalid values, injects the `--spds-branding-*` CSS variables, and redirects the supported PrimeNG tokens. Without `useSpds`, branding is available only through `PluginContext.brand`.
+
+[^brand-logo-urls]: Logo URLs may not load from plugin applications yet. Support will be updated later.
+
+The framework-neutral theme implementation is temporarily copied into this package. Maintainers can find its standalone exports, generated CSS contract, and removal instructions in [`src/design-system-theme/README.md`](./src/design-system-theme/README.md).
+
 ### Handling API Errors
 
 Non-OK responses from `api.get` and `api.post` throw `ApiError`, which exposes the
@@ -209,6 +248,24 @@ leading-slash normalization:
 await sdk.navigation.setRoute('/settings');
 expect(appShell.routeChanges).toEqual(['settings']);
 ```
+
+Appearance tests can start with separate operating-system and App Shell values, then drive either source:
+
+```typescript
+const appShell = mockSdkContext({
+	osColorScheme: 'dark',
+	appShellColorScheme: 'light',
+	brand: { logoUrl: '/logo.svg', darkLogoUrl: '/logo-dark.svg' }
+});
+const sdk = createSDK({ targetOrigin: appShell.targetOrigin, useSpds: true });
+
+appShell.emitOsColorSchemeChange('light');
+appShell.emitThemeChange('dark');
+
+appShell.restore();
+```
+
+`restore()` reinstates both the original parent `postMessage` implementation and the exact prior `window.matchMedia` property state.
 
 `page.subPath` is optional in a mock context. The mock derives it from
 `page.route` the same way the SDK does, so `appShell.context` always matches

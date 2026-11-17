@@ -53,6 +53,9 @@ describe('@sailpoint/ui-plugin-sdk', () => {
 		expect('RuntimeHandshake' in sdk).toBe(false);
 		expect('InternalSailPointPluginSDK' in sdk).toBe(false);
 		expect('mockSdkContext' in sdk).toBe(false);
+		expect('applySpdsBranding' in sdk).toBe(false);
+		expect('applySpdsColorScheme' in sdk).toBe(false);
+		expect('resolveSpdsBranding' in sdk).toBe(false);
 	});
 
 	it('should not expose initialize on created SDK', () => {

@@ -149,12 +149,50 @@ export interface PluginConfiguration {
 	pluginId?: string;
 }
 
+/**
+ * Color schemes App Shell can send to a plugin.
+ */
+export type ColorScheme = 'light' | 'dark';
+
+/**
+ * Effective theme state delivered to theme-change subscribers.
+ */
+export interface ThemeContext {
+	colorScheme: ColorScheme;
+}
+
+/**
+ * Raw public-safe tenant brand values supplied by App Shell during initialization.
+ *
+ * Every field is optional because older hosts may omit branding and newer hosts
+ * may send a partial brand. The SDK projects only these string fields and
+ * preserves their values unchanged. When `useSpds` is enabled, the six color
+ * fields are also passed to the SPDS theme implementation, which handles color
+ * validation, fallback, derivation, CSS variable generation, and PrimeNG token
+ * redirects.
+ */
+export interface PluginBrand {
+	actionButtonColor?: string;
+	darkActionButtonColor?: string;
+	activeLinkColor?: string;
+	darkActiveLinkColor?: string;
+	navigationColor?: string;
+	darkNavigationColor?: string;
+	productName?: string;
+	logoUrl?: string;
+	darkLogoUrl?: string;
+}
+
 export interface PluginContext {
 	tenant: TenantContext;
 	user: UserContext;
 	page: PageContext;
 	slot: SlotContext;
 	pluginConfiguration: PluginConfiguration;
+	/**
+	 * Raw initialization-only brand values from App Shell, when supplied.
+	 */
+	brand?: PluginBrand;
 }
 
 export interface TokenUpdatePayload {
@@ -190,6 +228,24 @@ export interface SailPointPluginSDKConfig {
 	requestTimeoutMs?: number;
 	maxClockSkewMs?: number;
 	now?: () => number;
+	/**
+	 * Synchronizes the effective parent/OS or App Shell scheme to
+	 * `document.documentElement.style.colorScheme`. Defaults to `true`.
+	 *
+	 * Set this to `false` when a plugin is designed for only one scheme and
+	 * should keep its existing document styling. Theme state and events remain
+	 * available without this DOM effect.
+	 */
+	syncColorScheme?: boolean;
+	/**
+	 * Opts into SPDS DOM effects: `spds-dark`, generated branding variables
+	 * (including defaults), and PrimeNG token redirects. Defaults to `false`.
+	 *
+	 * Parent/OS color-scheme fallback, App Shell takeover, theme APIs, and raw
+	 * `PluginContext.brand` remain active when disabled. Root `color-scheme`
+	 * synchronization is controlled separately by `syncColorScheme`.
+	 */
+	useSpds?: boolean;
 }
 
 export interface SailPointPluginSDK {
@@ -202,6 +258,10 @@ export interface SailPointPluginSDK {
 	events: {
 		onViewportChange(callback: (dimensions: ViewportUpdatePayload) => void): () => void;
 		onTokenUpdate(callback: (newToken: string) => void): () => void;
+		onThemeChange(callback: (theme: ThemeContext) => void): () => void;
+	};
+	theme: {
+		getColorScheme(): ColorScheme | undefined;
 	};
 	navigation: {
 		/**

@@ -85,6 +85,24 @@ const APP_SHELL_INIT_PAYLOAD = {
 };
 
 /**
+ * Literal optional appearance fields merged by UIARMADA-1188 and UIARMADA-1203.
+ */
+const APP_SHELL_APPEARANCE = {
+	colorScheme: 'dark',
+	brand: {
+		actionButtonColor: '#0057b8',
+		darkActionButtonColor: '#6fb7ff',
+		activeLinkColor: '#006fba',
+		darkActiveLinkColor: '#8ac8ff',
+		navigationColor: '#002f5f',
+		darkNavigationColor: '#b8dcff',
+		productName: 'Acme Identity Security',
+		logoUrl: 'https://cdn.example/acme-light.svg',
+		darkLogoUrl: 'https://cdn.example/acme-dark.svg'
+	}
+} as const;
+
+/**
  * Minimal shared envelope shape used by the SDK and saas-sp-renderer.
  * `protocolVersion` is optional because App Shell responses carry it in the
  * READY payload instead of repeating it as top-level envelope metadata.
@@ -115,11 +133,11 @@ class ContractSourceWindow implements MessageSource {
 		}
 	}
 
-	public emit(message: ContractEnvelope): void {
+	public emit(message: ContractEnvelope, origin = APP_SHELL_ORIGIN): void {
 		for (const listener of this.listeners) {
 			listener({
 				data: message,
-				origin: APP_SHELL_ORIGIN,
+				origin,
 				source: null
 			});
 		}
@@ -174,7 +192,10 @@ describe('saas-sp-renderer contract compatibility', () => {
 		const sourceWindow = new ContractSourceWindow();
 		const appShell = new ContractAppShell();
 		window.history.replaceState({}, '', `/?parentOrigin=${encodeURIComponent(APP_SHELL_ORIGIN)}`);
-		const contextPayload = APP_SHELL_INIT_PAYLOAD;
+		const contextPayload = {
+			...APP_SHELL_INIT_PAYLOAD,
+			...APP_SHELL_APPEARANCE
+		};
 
 		appShell.onMessage = message => {
 			expectValidSdkEnvelope(message);
@@ -229,18 +250,19 @@ describe('saas-sp-renderer contract compatibility', () => {
 			requestTimeoutMs: 500
 		});
 
-		await expect(sdk.getContext()).resolves.toEqual({
+		const context = await sdk.getContext();
+		expect(context).toMatchObject({
 			tenant: contextPayload.tenantContext,
 			user: contextPayload.userContext,
 			page: { ...contextPayload.pageContext, subPath: 'settings/general' },
 			slot: contextPayload.slotContext,
-			pluginConfiguration: contextPayload.pluginConfiguration
+			pluginConfiguration: contextPayload.pluginConfiguration,
+			brand: contextPayload.brand
 		});
 		/**
 		 * AC-4: the capability map reaches the plugin key-for-key, and AC-8: the
 		 * host's mount configuration is no longer silently discarded.
 		 */
-		const context = await sdk.getContext();
 		expect(context.user.capabilities).toEqual(contextPayload.userContext.capabilities);
 		expect(context.pluginConfiguration.pluginId).toBe('plugin-1');
 		expect(context.pluginConfiguration.slotConfiguration?.maximumHeight).toBe(2000);
@@ -250,12 +272,35 @@ describe('saas-sp-renderer contract compatibility', () => {
 		 * Shell transports a token metadata object.
 		 */
 		await expect(sdk.api.getToken()).resolves.toBe('app-shell-token');
+		expect(sdk.theme.getColorScheme()).toBe('dark');
+		expect(context.brand?.darkLogoUrl).toBe('https://cdn.example/acme-dark.svg');
+		expect(context.brand?.actionButtonColor).toBe('#0057b8');
+		expect(document.documentElement.style.colorScheme).toBe('dark');
+
+		const onThemeChange = jest.fn();
+		sdk.events.onThemeChange(onThemeChange);
+		sourceWindow.emit({
+			type: 'SP_COLOR_SCHEME_UPDATE_EVT',
+			timestamp: NOW_ISO,
+			payload: { colorScheme: 'light' }
+		});
+		expect(onThemeChange).toHaveBeenCalledWith({ colorScheme: 'light' });
+		expect(sdk.theme.getColorScheme()).toBe('light');
 		expect(appShell.received.map(({ message }) => message.type)).toEqual([
 			MESSAGE_TYPES.SP_PLUGIN_READY_REQ,
 			MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES,
 			MESSAGE_TYPES.SP_PLUGIN_INIT_RES
 		]);
 		expect(appShell.received.every(({ targetOrigin }) => targetOrigin === APP_SHELL_ORIGIN)).toBe(true);
+		sourceWindow.emit(
+			{
+				type: 'SP_COLOR_SCHEME_UPDATE_EVT',
+				timestamp: NOW_ISO,
+				payload: { colorScheme: 'dark' }
+			},
+			'https://evil.example'
+		);
+		expect(sdk.theme.getColorScheme()).toBe('light');
 	});
 
 	it('normalizes App Shell token objects for refreshes and update events', async () => {
@@ -382,6 +427,63 @@ describe('saas-sp-renderer contract compatibility', () => {
 				}
 			}
 		});
+	});
+
+	it('suppresses a detached eager failure and retries on the next dependent call', async () => {
+		const sourceWindow = new ContractSourceWindow();
+		const appShell = new ContractAppShell();
+		let readyAttempts = 0;
+
+		appShell.onMessage = message => {
+			if (message.type === MESSAGE_TYPES.SP_PLUGIN_READY_REQ) {
+				readyAttempts += 1;
+				queueMicrotask(() => {
+					if (readyAttempts === 1) {
+						sourceWindow.emit(
+							appShellEnvelope(MESSAGE_TYPES.SP_ERROR_RES, 'eager-error-id', {
+								type: 'ERR_EAGER_ATTEMPT',
+								requestId: message.requestId
+							})
+						);
+						return;
+					}
+
+					sourceWindow.emit(
+						appShellEnvelope(MESSAGE_TYPES.SP_PLUGIN_READY_RES, message.requestId as string, {
+							protocolVersion: COIP_PROTOCOL_VERSION
+						})
+					);
+					queueMicrotask(() => {
+						sourceWindow.emit(
+							appShellEnvelope(MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_REQ, 'retry-token', {
+								token: 'retry-token'
+							})
+						);
+					});
+				});
+				return;
+			}
+
+			if (message.type === MESSAGE_TYPES.SP_AUTH_TOKEN_DELIVERY_RES) {
+				queueMicrotask(() => {
+					sourceWindow.emit(
+						appShellEnvelope(MESSAGE_TYPES.SP_PLUGIN_INIT_REQ, 'retry-init', APP_SHELL_INIT_PAYLOAD)
+					);
+				});
+			}
+		};
+
+		const sdk = createSDK({
+			targetOrigin: APP_SHELL_ORIGIN,
+			parentWindow: appShell,
+			sourceWindow,
+			now: () => NOW,
+			requestTimeoutMs: 500
+		});
+
+		await new Promise(resolve => setTimeout(resolve, 0));
+		await expect(sdk.getContext()).resolves.toMatchObject({ tenant: { id: 'tenant-1' } });
+		expect(readyAttempts).toBe(2);
 	});
 
 	/**
